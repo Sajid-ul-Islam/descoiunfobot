@@ -1,0 +1,3 @@
+puthon-telegram-bot
+requests
+urllib3
