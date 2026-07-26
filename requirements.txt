@@ -1,3 +1,4 @@
-puthon-telegram-bot
+python-telegram-bot
 requests
 urllib3
+python-dotenv

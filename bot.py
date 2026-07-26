@@ -1,7 +1,9 @@
 import asyncio
+import os
 import requests
 import urllib3
 
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -17,11 +19,14 @@ urllib3.disable_warnings(
 # CONFIG
 # =====================================
 
-BOT_TOKEN = "8847321807:AAGnUzsJhdFDsf3Y6VpuE6Scof0tO7nsCvQ"
-ACCOUNT_NO = "41032243"
+load_dotenv()
 
-CHAT_ID = 150746841
-LOW_BALANCE_LIMIT = 100
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ACCOUNT_NO = os.getenv("ACCOUNT_NO")
+CHAT_ID = int(os.getenv("CHAT_ID"))
+LOW_BALANCE_LIMIT = int(os.getenv("LOW_BALANCE_LIMIT", 100))
+
+ALLOWED_USERS = {CHAT_ID}
 
 # =====================================
 # DESCO API
@@ -45,10 +50,21 @@ def get_balance_data():
     return result.get("data")
 
 # =====================================
+# ACCESS CONTROL
+# =====================================
+
+def is_allowed(update: Update) -> bool:
+    return update.effective_user.id in ALLOWED_USERS
+
+# =====================================
 # COMMANDS
 # =====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not is_allowed(update):
+        await update.message.reply_text("⛔ Unauthorized")
+        return
 
     await update.message.reply_text(
         "⚡ DESCO Buddy Online\n\n"
@@ -59,6 +75,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if not is_allowed(update):
+        await update.message.reply_text("⛔ Unauthorized")
+        return
+
     try:
 
         data = get_balance_data()
@@ -66,7 +86,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not data:
 
             await update.message.reply_text(
-                "❌ Account data পাওয়া যায়নি"
+                "❌ Account data পাওয়া যায়নি"
             )
             return
 
