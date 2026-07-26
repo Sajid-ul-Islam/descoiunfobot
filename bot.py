@@ -21,10 +21,12 @@ urllib3.disable_warnings(
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ACCOUNT_NO = os.getenv("ACCOUNT_NO")
-CHAT_ID = int(os.getenv("CHAT_ID"))
+BOT_TOKEN        = os.getenv("BOT_TOKEN")
+ACCOUNT_NO       = os.getenv("ACCOUNT_NO")
+CHAT_ID          = int(os.getenv("CHAT_ID"))
 LOW_BALANCE_LIMIT = int(os.getenv("LOW_BALANCE_LIMIT", 100))
+WEBHOOK_URL      = os.getenv("WEBHOOK_URL")   # e.g. https://descoinfo.onrender.com
+PORT             = int(os.getenv("PORT", 10000))
 
 ALLOWED_USERS = {CHAT_ID}
 
@@ -91,24 +93,14 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         balance_amount = data.get("balance", 0)
-        monthly_usage = data.get(
-            "currentMonthConsumption",
-            0
-        )
-        meter_no = data.get(
-            "meterNo",
-            "N/A"
-        )
-        reading_time = data.get(
-            "readingTime",
-            "N/A"
-        )
+        monthly_usage  = data.get("currentMonthConsumption", 0)
+        meter_no       = data.get("meterNo", "N/A")
+        reading_time   = data.get("readingTime", "N/A")
 
         msg = (
             f"⚡ DESCO Info\n\n"
             f"💰 Balance: ৳{balance_amount}\n"
-            f"📊 Monthly Usage: "
-            f"{float(monthly_usage):.2f} Unit\n"
+            f"📊 Monthly Usage: {float(monthly_usage):.2f} Unit\n"
             f"🔌 Meter: {meter_no}\n"
             f"🕒 Reading: {reading_time}"
         )
@@ -137,9 +129,7 @@ async def low_balance_checker(app):
 
             if data:
 
-                current_balance = float(
-                    data["balance"]
-                )
+                current_balance = float(data["balance"])
 
                 if current_balance <= LOW_BALANCE_LIMIT:
 
@@ -149,8 +139,7 @@ async def low_balance_checker(app):
                             chat_id=CHAT_ID,
                             text=(
                                 "⚠️ LOW BALANCE ALERT\n\n"
-                                f"Current Balance: "
-                                f"৳{current_balance}"
+                                f"Current Balance: ৳{current_balance}"
                             )
                         )
 
@@ -188,27 +177,19 @@ def main():
         .build()
     )
 
-    app.add_handler(
-        CommandHandler(
-            "start",
-            start
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "balance",
-            balance
-        )
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("balance", balance))
 
     app.post_init = startup
 
-    print(
-        "DESCO Info Running..."
-    )
+    print("DESCO Info Running (webhook)...")
 
-    app.run_polling()
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
+    )
 
 
 if __name__ == "__main__":

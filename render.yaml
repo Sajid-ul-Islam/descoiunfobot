@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: descoinfo
     runtime: docker
     dockerfilePath: ./Dockerfile
@@ -12,3 +12,7 @@ services:
         sync: false
       - key: LOW_BALANCE_LIMIT
         value: "100"
+      - key: WEBHOOK_URL
+        sync: false
+      - key: PORT
+        value: "10000"
