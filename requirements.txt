@@ -2,3 +2,4 @@ python-telegram-bot[webhooks]
 requests
 urllib3
 python-dotenv
+python-dateutil
