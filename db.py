@@ -22,11 +22,16 @@ def init_db():
                 last_seen TIMESTAMP,
                 request_count INTEGER DEFAULT 1,
                 last_account_no TEXT,
-                language TEXT DEFAULT 'en'
+                language TEXT DEFAULT 'en',
+                provider TEXT DEFAULT 'desco'
             )
         """)
         try:
             cursor.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'en'")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN provider TEXT DEFAULT 'desco'")
         except Exception:
             pass
 
@@ -68,8 +73,8 @@ def track_user(user, command: str = "", account_no: str = ""):
             """, params)
         else:
             cursor.execute("""
-                INSERT INTO users (user_id, username, first_name, last_name, first_seen, last_seen, request_count, last_account_no, language)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'en')
+                INSERT INTO users (user_id, username, first_name, last_name, first_seen, last_seen, request_count, last_account_no, language, provider)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'en', 'desco')
             """, (user_id, username, first_name, last_name, now, now, account_no))
 
         if command:
@@ -92,6 +97,19 @@ def get_user_language(user_id: int) -> str:
         cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         return row["language"] if row and row["language"] else "en"
+
+def set_user_provider(user_id: int, provider: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET provider = ? WHERE user_id = ?", (provider, user_id))
+        conn.commit()
+
+def get_user_provider(user_id: int) -> str:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT provider FROM users WHERE user_id = ?", (provider, user_id))
+        row = cursor.fetchone()
+        return row["provider"] if row and row["provider"] else "desco"
 
 def get_admin_stats() -> dict:
     now = datetime.now()

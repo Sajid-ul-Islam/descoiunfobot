@@ -22,7 +22,7 @@ from telegram.ext import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language
+from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language, get_user_provider, set_user_provider
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
@@ -268,6 +268,24 @@ def settings_keyboard(lang: str = "en"):
             InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
             InlineKeyboardButton("🇧🇩 বাংলা",  callback_data="set_lang_bn"),
         ],
+        [InlineKeyboardButton("⚡ Change Utility Provider", callback_data="select_provider")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
+
+def provider_selector_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚡ DESCO (Dhaka North)",  callback_data="set_prov_desco"),
+            InlineKeyboardButton("🌾 Palli Bidyut (BREB)",   callback_data="set_prov_breb"),
+        ],
+        [
+            InlineKeyboardButton("🏢 BPDB (Chattogram)",    callback_data="set_prov_bpdb"),
+            InlineKeyboardButton("🌆 DPDC (Dhaka South)",    callback_data="set_prov_dpdc"),
+        ],
+        [
+            InlineKeyboardButton("🌊 WZPDCL (West Zone)",   callback_data="set_prov_wzpdcl"),
+            InlineKeyboardButton("❄️ NESCO (North Zone)",   callback_data="set_prov_nesco"),
+        ],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
@@ -384,13 +402,14 @@ async def palli_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/token")
+async def provider_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/provider")
     lang = get_lang(update, context)
+    msg_text = get_msg(lang, "provider_title")
     await update.message.reply_text(
-        get_token_help_text(lang),
+        msg_text,
         parse_mode="Markdown",
-        reply_markup=back_keyboard(lang),
+        reply_markup=provider_selector_keyboard(lang),
     )
 
 
@@ -850,12 +869,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     send = query.message.reply_text
     data = query.data
 
-    if data == "settings":
+    if data == "select_provider":
         lang = get_lang(update, context)
         await send(
-            get_msg(lang, "settings_title"),
+            get_msg(lang, "provider_title"),
             parse_mode="Markdown",
-            reply_markup=settings_keyboard(lang),
+            reply_markup=provider_selector_keyboard(lang),
+        )
+        return
+
+    if data.startswith("set_prov_"):
+        prov_code = data.replace("set_prov_", "")
+        set_user_provider(update.effective_user.id, prov_code)
+        context.user_data["provider"] = prov_code
+        lang = get_lang(update, context)
+        prov_names = {
+            "desco": "DESCO (Dhaka North)",
+            "breb": "Palli Bidyut (BREB)",
+            "bpdb": "BPDB (Chattogram)",
+            "dpdc": "DPDC (Dhaka South)",
+            "wzpdcl": "WZPDCL (West Zone)",
+            "nesco": "NESCO (North Zone)",
+        }
+        name = prov_names.get(prov_code, prov_code.upper())
+        await send(
+            get_msg(lang, "provider_saved", name=name),
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(lang),
         )
         return
 
@@ -1071,6 +1111,7 @@ async def setup_commands(app):
         BotCommand("daily",    "📆 Daily usage & cost breakdown"),
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
+        BotCommand("provider", "⚡ Select electricity provider"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
         BotCommand("bpdb",     "🏢 BPDB (Chattogram & Zones) info"),
         BotCommand("token",    "🔑 Missing token recovery guide"),
@@ -1142,13 +1183,14 @@ def main():
     app.add_handler(CommandHandler("help",     help_command))
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("settings", settings_cmd))
+    app.add_handler(CommandHandler("provider", provider_cmd))
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
