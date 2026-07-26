@@ -67,7 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "⚡ DESCO Buddy Online\n\n"
+        "⚡ DESCO Info Online\n\n"
         "Commands:\n"
         "/balance"
     )
@@ -105,7 +105,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         msg = (
-            f"⚡ DESCO Balance\n\n"
+            f"⚡ DESCO Info\n\n"
             f"💰 Balance: ৳{balance_amount}\n"
             f"📊 Monthly Usage: "
             f"{float(monthly_usage):.2f} Unit\n"
@@ -205,7 +205,7 @@ def main():
     app.post_init = startup
 
     print(
-        "DESCO Buddy Running..."
+        "DESCO Info Running..."
     )
 
     app.run_polling()
