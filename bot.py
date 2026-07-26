@@ -26,7 +26,7 @@ from db import init_db, track_user, get_admin_stats, get_user_language, set_user
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
-from power_bd import get_bpdb_text, get_all_coverage_text
+from power_bd import get_bpdb_text, get_nesco_text, get_all_coverage_text
 from providers_adapter import provider_get
 from tariff_tips import get_tariff_tip, get_low_balance_warning
 from report_gen import generate_csv_report
@@ -297,11 +297,12 @@ def other_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "bpdb_btn"),  callback_data="bpdb_info"),
         ],
         [
+            InlineKeyboardButton(get_msg(lang, "nesco_btn"),     callback_data="nesco_info"),
             InlineKeyboardButton(get_msg(lang, "postpaid_btn"),  callback_data="postpaid_info"),
-            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
         ],
         [
-            InlineKeyboardButton(get_msg(lang, "token_btn"), callback_data="token_info"),
+            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
+            InlineKeyboardButton(get_msg(lang, "token_btn"),     callback_data="token_info"),
         ],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
@@ -495,6 +496,17 @@ async def bpdb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         disable_web_page_preview=True,
         reply_markup=bpdb_keyboard(lang),
+    )
+
+
+async def nesco_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/nesco")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_nesco_text(lang),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=back_keyboard(lang),
     )
 
 
@@ -698,7 +710,7 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         s = calc_stats(bal_data, info_data)
-        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s["load_pct"] is not None else ""
+        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s["load_pct'] is not None else ""
         conn_line = f"🏗 Connection Age: `{s['conn_age']}`\n"  if s["conn_age"]            else ""
         
         lang = get_lang(None, context)
@@ -1049,9 +1061,6 @@ async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
     except Exception as e:
         await send_fn(f"❌ Error exporting report: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
-    except Exception as e:
-        await send_fn(f"❌ Error generating chart: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
-
 # =====================================
 # COMMAND ENTRY POINTS
 # =====================================
@@ -1085,6 +1094,7 @@ async def monthly_cmd(u, c):  return await _cmd(ACTION_MONTHLY,  u, c)
 async def daily_cmd(u, c):    return await _cmd(ACTION_DAILY,    u, c)
 async def chart_cmd(u, c):    return await _cmd(ACTION_CHART,    u, c)
 async def export_cmd(u, c):   return await _cmd(ACTION_EXPORT,   u, c)
+async def nesco_cmd(u, c):    return await _cmd(ACTION_NESCO,    u, c)
 
 # =====================================
 # INLINE BUTTON HANDLER
@@ -1153,6 +1163,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
         )
         return ASK_ACCOUNT
+
+    if data.startswith("set_prov_"):
         prov_code = data.replace("set_prov_", "")
         set_user_provider(update.effective_user.id, prov_code)
         context.user_data["provider"] = prov_code
@@ -1192,6 +1204,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             get_palli_text(lang),
             parse_mode="Markdown",
             reply_markup=palli_keyboard(lang),
+        )
+        return
+
+    if data == "nesco_info":
+        lang = get_lang(update, context)
+        await send(
+            get_nesco_text(lang),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=back_keyboard(lang),
         )
         return
 
@@ -1393,6 +1415,7 @@ async def setup_commands(app):
         BotCommand("other",    "🌐 Other providers & services"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
         BotCommand("bpdb",     "🏢 BPDB (Chattogram & Zones) info"),
+        BotCommand("nesco",    "❄️ NESCO (Rajshahi & Rangpur) info"),
         BotCommand("token",    "🔑 Missing token recovery guide"),
         BotCommand("providers","🇧🇩 All Bangladesh power providers"),
         BotCommand("settings", "⚙️ Language & bot settings"),
@@ -1470,10 +1493,11 @@ def main():
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
+    app.add_handler(CommandHandler("nesco",    nesco_cmd))
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 

@@ -99,3 +99,23 @@ def get_bpdb_text(lang: str = "en") -> str:
         f"📞 *Helpline:* **{p['helpline']}**\n\n"
         "📱 *MFS Bill Pay:* bKash / Nagad → Pay Bill → BPDB"
     )
+
+def get_nesco_text(lang: str = "en") -> str:
+    p = ALL_PROVIDERS["nesco"]
+    if lang == "bn":
+        return (
+            f"❄️ *{p['name_bn']}*\n\n"
+            f"📍 *কভারেজ:* {p['coverage_bn']}\n"
+            "• নেসকো (নর্দার্ন ইলেকট্রিসিটি সাপ্লাই কোম্পানি) রাজশাহী ও রংপুর বিভাগে বিদ্যুৎ সরবরাহ করে।\n\n"
+            f"🌐 *গ্রাহক পোর্টাল:* [nesco.gov.bd]({p['portal']})\n"
+            f"📞 *২৪/৭ হেল্পলাইন:* **{p['helpline']}**\n\n"
+            "📱 *অনলাইন রিচার্জ:* বিকাশ / নগদ → পে বিল → নেসকো প্রিপেইড / পোস্টপেইড"
+        )
+    return (
+        f"❄️ *{p['name_en']}*\n\n"
+        f"📍 *Coverage:* {p['coverage_en']}\n"
+        "• Northern Electricity Supply Company PLC (NESCO) distributes power across Rajshahi & Rangpur divisions.\n\n"
+        f"🌐 *Customer Portal:* [nesco.gov.bd]({p['portal']})\n"
+        f"📞 *24/7 Helpline:* **{p['helpline']}**\n\n"
+        "📱 *MFS Recharge:* bKash / Nagad → Pay Bill → NESCO Prepaid / Postpaid"
+    )
