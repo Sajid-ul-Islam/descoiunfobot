@@ -70,16 +70,26 @@ def desco_get(system: str, endpoint: str, account_no: str,
     return data, code, desc
 
 
-def detect_system(account_no: str) -> tuple[str | None, dict | None]:
-    """Try both systems. Return (system, info_data) for whichever works."""
-    for sys in SYSTEMS:
-        try:
-            data, code, _ = desco_get(sys, "getCustomerInfo", account_no)
-            if data:
-                return sys, data
-        except Exception:
-            pass
-    return None, None
+def detect_system(user_input: str) -> tuple:
+    """
+    Try user_input as accountNo then as meterNo across both systems.
+    Returns (system, account_no, meter_no, info_data) or (None, None, None, None).
+    """
+    combos = [
+        (user_input, ""),   # treat as account number
+        ("",   user_input),  # treat as meter number
+    ]
+    for system in SYSTEMS:
+        for acc, met in combos:
+            try:
+                data, code, _ = desco_get(system, "getCustomerInfo", acc, met)
+                if data:
+                    account_no = data.get("accountNo") or acc or ""
+                    meter_no   = data.get("meterNo")   or met or ""
+                    return system, account_no, meter_no, data
+            except Exception:
+                pass
+    return None, None, None, None
 
 # =====================================
 # TARIFF CALCULATOR (DESCO LT-A slabs)
@@ -190,8 +200,8 @@ async def resolve_account(update, context, action):
         return account_no, system, meter_no
     send = (update.message or update.callback_query.message).reply_text
     await send(
-        "🔢 Enter your *DESCO account number*:\n\n"
-        "_Found on your electricity bill or meter card._",
+        "🔢 Enter your *account number* or *meter number*:\n\n"
+        "_Both are printed on your electricity bill or meter card._",
         parse_mode="Markdown",
     )
     context.user_data["pending_action"] = action
@@ -239,34 +249,37 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================
 
 async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    account_no = update.message.text.strip()
+    user_input = update.message.text.strip()
     send = update.message.reply_text
-    if not account_no.isdigit():
+    if not user_input.isdigit():
         await send(
-            "❌ *Invalid.* Enter digits only, or /cancel.",
+            "❌ *Invalid.* Enter digits only (account or meter number), or /cancel.",
             parse_mode="Markdown",
         )
         return ASK_ACCOUNT
 
-    await send("🔍 Detecting account system...")
-    system, info_data = detect_system(account_no)
+    await send("🔍 Detecting account...")
+    system, account_no, meter_no, info_data = detect_system(user_input)
 
     if not system:
         await send(
-            "❌ *Account not found on DESCO servers.*\n\n"
-            "Please double-check your account number.\n"
-            "Try /balance again.",
+            "❌ *Not found on DESCO servers.*\n\n"
+            "Please double-check your account number or meter number.",
             parse_mode="Markdown",
             reply_markup=back_keyboard(),
         )
         return ConversationHandler.END
 
-    meter_no = (info_data or {}).get("meterNo", "")
     context.user_data["account_no"] = account_no
     context.user_data["system"]     = system
     context.user_data["meter_no"]   = meter_no
 
-    await send(f"✅ Account found on *{system}* system.", parse_mode="Markdown")
+    await send(
+        f"✅ Found on *{system}* system\n"
+        f"🔑 Account: `{account_no}`\n"
+        f"🔌 Meter: `{meter_no}`",
+        parse_mode="Markdown",
+    )
 
     action = context.user_data.pop("pending_action", ACTION_BALANCE)
     dispatch = {
