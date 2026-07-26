@@ -179,9 +179,8 @@ async def ask_for_account(send_fn, action: str, context: ContextTypes.DEFAULT_TY
         # Use saved account directly without asking
         return saved
     await send_fn(
-        f"🔢 Enter your *DESCO account number*:\n\n"
-        f"_Found on your electricity bill or prepaid meter card._\n"
-        f"_Example: `41032243`_",
+        "🔢 Enter your *DESCO account number*:\n\n"
+        "_Found on your electricity bill or prepaid meter card._",
         parse_mode="Markdown",
     )
     context.user_data["pending_action"] = action
