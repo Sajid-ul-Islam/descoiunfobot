@@ -237,6 +237,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /balance — Prepaid balance\n"
         "• /info — Customer & meter details\n"
         "• /stats — Usage stats & bill estimate\n"
+        "• /chart — Visual usage & trend charts\n"
         "• /summary — Full summary\n"
         "• /daily — Daily usage & cost breakdown\n"
         "• /recharge — Last 12 months recharge history\n"
