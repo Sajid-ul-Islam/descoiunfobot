@@ -4,8 +4,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.io as pio
 
-# Use dark theme
+# Use dark theme & Bengali compatible font family
 pio.templates.default = "plotly_dark"
+FONT_FAMILY = "Noto Sans Bengali, Kalpurush, SolaimanLipi, Vrinda, Arial, sans-serif"
 
 def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
     """Generates a Plotly PNG chart for daily consumption & cost."""
@@ -39,11 +40,11 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
         go.Bar(
             x=dates,
             y=units,
-            name="Units (kWh)",
+            name="Units (kWh)" if lang == "en" else "ইউনিট (kWh)",
             marker_color="#89b4fa",
             text=[f"{u:.1f}" for u in units],
             textposition="outside",
-            textfont=dict(color="#cdd6f4", size=9),
+            textfont=dict(color="#cdd6f4", size=9, family=FONT_FAMILY),
         ),
         secondary_y=False,
     )
@@ -52,7 +53,7 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
         go.Scatter(
             x=dates,
             y=taka,
-            name="Cost (৳)",
+            name="Cost (৳)" if lang == "en" else "খরচ (৳)",
             mode="lines+markers",
             line=dict(color="#fab387", width=3),
             marker=dict(size=7, color="#fab387"),
@@ -60,22 +61,26 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
         secondary_y=True,
     )
 
-    title_text = f"📆 Daily Usage & Cost Trend — Account: {account_no} ({system})" if lang == "en" else f"📆 দৈনিক ব্যবহার ও খরচের গ্রাফ — অ্যাকাউন্ট: {account_no} ({system})"
+    title_text = (
+        f"📆 Daily Usage & Cost Trend — Account: {account_no} ({system})"
+        if lang == "en"
+        else f"📆 দৈনিক ব্যবহার ও খরচের ট্রেন্ড — অ্যাকাউন্ট: {account_no} ({system})"
+    )
 
     fig.update_layout(
         title=dict(
             text=title_text,
-            font=dict(size=15, color="#cdd6f4"),
+            font=dict(size=15, color="#cdd6f4", family=FONT_FAMILY),
             x=0.02,
         ),
         paper_bgcolor="#11111b",
         plot_bgcolor="#181825",
-        font=dict(color="#a6adc8"),
+        font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)", gridcolor="#313244", showgrid=True),
-        yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True),
-        yaxis2=dict(title="Cost (৳)" if lang == "en" else "খরচ (৳)", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
+        xaxis=dict(title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis2=dict(title="Cost (৳)" if lang == "en" else "খরচ (৳)", showgrid=False, titlefont=dict(family=FONT_FAMILY)),
         width=850,
         height=480,
     )
@@ -100,11 +105,11 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
         go.Bar(
             x=months,
             y=mo_units,
-            name="Monthly Units (kWh)",
+            name="Monthly Units (kWh)" if lang == "en" else "মাসিক ইউনিট (kWh)",
             marker_color="#a6e3a1",
             text=[f"{u:.0f}" for u in mo_units],
             textposition="outside",
-            textfont=dict(color="#a6e3a1", size=10),
+            textfont=dict(color="#a6e3a1", size=10, family=FONT_FAMILY),
         ),
         secondary_y=False,
     )
@@ -113,7 +118,7 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
         go.Scatter(
             x=months,
             y=mo_taka,
-            name="Bill Amount (৳)",
+            name="Bill Amount (৳)" if lang == "en" else "বিল (৳)",
             mode="lines+markers",
             line=dict(color="#f9e2af", width=3),
             marker=dict(size=8, color="#f9e2af"),
@@ -121,22 +126,26 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
         secondary_y=True,
     )
 
-    title_text = f"📅 Monthly Usage & Bill History — Account: {account_no} ({system})" if lang == "en" else f"📅 ১২ মাসের ব্যবহার ও বিলের তথ্য — অ্যাকাউন্ট: {account_no} ({system})"
+    title_text = (
+        f"📅 Monthly Usage & Bill History — Account: {account_no} ({system})"
+        if lang == "en"
+        else f"📅 ১২ মাসের ব্যবহার ও বিলের ইতিহাস — অ্যাকাউন্ট: {account_no} ({system})"
+    )
 
     fig.update_layout(
         title=dict(
             text=title_text,
-            font=dict(size=15, color="#cdd6f4"),
+            font=dict(size=15, color="#cdd6f4", family=FONT_FAMILY),
             x=0.02,
         ),
         paper_bgcolor="#11111b",
         plot_bgcolor="#181825",
-        font=dict(color="#a6adc8"),
+        font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(title="Month (YYYY-MM)" if lang == "en" else "মাস (YYYY-MM)", gridcolor="#313244", showgrid=True),
-        yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True),
-        yaxis2=dict(title="Bill (৳)" if lang == "en" else "বিল (৳)", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
+        xaxis=dict(title="Month (YYYY-MM)" if lang == "en" else "মাস (YYYY-MM)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis2=dict(title="Bill (৳)" if lang == "en" else "বিল (৳)", showgrid=False, titlefont=dict(family=FONT_FAMILY)),
         width=850,
         height=480,
     )
@@ -168,28 +177,32 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
         go.Bar(
             x=dates,
             y=amts,
-            name="Recharge Amount (৳)",
+            name="Recharge Amount (৳)" if lang == "en" else "রিচার্জের টাকা (৳)",
             marker_color="#a6e3a1",
             text=[f"৳{int(a)}" for a in amts],
             textposition="outside",
-            textfont=dict(color="#a6e3a1", size=9),
+            textfont=dict(color="#a6e3a1", size=9, family=FONT_FAMILY),
         )
     )
 
-    title_text = f"💳 Recharge History — Account: {account_no} ({system})" if lang == "en" else f"💳 রিচার্জ ইতিহাস — অ্যাকাউন্ট: {account_no} ({system})"
+    title_text = (
+        f"💳 Recharge History — Account: {account_no} ({system})"
+        if lang == "en"
+        else f"💳 রিচার্জের ইতিহাস — অ্যাকাউন্ট: {account_no} ({system})"
+    )
 
     fig.update_layout(
         title=dict(
             text=title_text,
-            font=dict(size=15, color="#cdd6f4"),
+            font=dict(size=15, color="#cdd6f4", family=FONT_FAMILY),
             x=0.02,
         ),
         paper_bgcolor="#11111b",
         plot_bgcolor="#181825",
-        font=dict(color="#a6adc8"),
+        font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
-        xaxis=dict(title="Recharge Date" if lang == "en" else "রিচার্জের তারিখ", gridcolor="#313244", showgrid=True),
-        yaxis=dict(title="Amount (৳)" if lang == "en" else "টাকা (৳)", gridcolor="#313244", showgrid=True),
+        xaxis=dict(title="Recharge Date" if lang == "en" else "রিচার্জের তারিখ", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis=dict(title="Amount (৳)" if lang == "en" else "টাকা (৳)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
         width=850,
         height=480,
     )
@@ -249,8 +262,8 @@ def generate_usage_chart(
         go.Indicator(
             mode="number",
             value=bal_val,
-            number={"prefix": "৳", "font": {"color": "#a6e3a1", "size": 28}},
-            title={"text": t_bal, "font": {"color": "#cdd6f4", "size": 12}},
+            number={"prefix": "৳", "font": {"color": "#a6e3a1", "size": 28, "family": FONT_FAMILY}},
+            title={"text": t_bal, "font": {"color": "#cdd6f4", "size": 12, "family": FONT_FAMILY}},
         ),
         row=1, col=1
     )
@@ -259,8 +272,8 @@ def generate_usage_chart(
         go.Indicator(
             mode="number",
             value=mo_use,
-            number={"suffix": " kWh", "font": {"color": "#89b4fa", "size": 28}},
-            title={"text": t_mo, "font": {"color": "#cdd6f4", "size": 12}},
+            number={"suffix": " kWh", "font": {"color": "#89b4fa", "size": 28, "family": FONT_FAMILY}},
+            title={"text": t_mo, "font": {"color": "#cdd6f4", "size": 12, "family": FONT_FAMILY}},
         ),
         row=1, col=2
     )
@@ -270,8 +283,8 @@ def generate_usage_chart(
         go.Indicator(
             mode="number",
             value=daily_avg,
-            number={"suffix": " kWh/d", "font": {"color": "#f9e2af", "size": 28}},
-            title={"text": t_avg, "font": {"color": "#cdd6f4", "size": 12}},
+            number={"suffix": " kWh/d", "font": {"color": "#f9e2af", "size": 28, "family": FONT_FAMILY}},
+            title={"text": t_avg, "font": {"color": "#cdd6f4", "size": 12, "family": FONT_FAMILY}},
         ),
         row=2, col=1
     )
@@ -280,8 +293,8 @@ def generate_usage_chart(
         go.Indicator(
             mode="number",
             value=projected_mo,
-            number={"suffix": " kWh", "font": {"color": "#fab387", "size": 28}},
-            title={"text": t_proj, "font": {"color": "#cdd6f4", "size": 12}},
+            number={"suffix": " kWh", "font": {"color": "#fab387", "size": 28, "family": FONT_FAMILY}},
+            title={"text": t_proj, "font": {"color": "#cdd6f4", "size": 12, "family": FONT_FAMILY}},
         ),
         row=2, col=2
     )
@@ -307,11 +320,11 @@ def generate_usage_chart(
         taka  = taka[-15:]
 
         fig.add_trace(
-            go.Bar(x=dates, y=units, name="Daily Units", marker_color="#89b4fa", text=[f"{u:.1f}" for u in units], textposition="outside", textfont=dict(size=8)),
+            go.Bar(x=dates, y=units, name="Daily Units" if lang == "en" else "দৈনিক ইউনিট", marker_color="#89b4fa", text=[f"{u:.1f}" for u in units], textposition="outside", textfont=dict(size=8, family=FONT_FAMILY)),
             row=3, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=dates, y=taka, name="Daily Cost (৳)", mode="lines+markers", line=dict(color="#fab387", width=2.5), marker=dict(size=6)),
+            go.Scatter(x=dates, y=taka, name="Daily Cost (৳)" if lang == "en" else "দৈনিক খরচ (৳)", mode="lines+markers", line=dict(color="#fab387", width=2.5), marker=dict(size=6)),
             row=3, col=1, secondary_y=True
         )
 
@@ -323,25 +336,25 @@ def generate_usage_chart(
         mo_taka  = [float(m.get("consumedTaka") or 0) for m in sorted_mo]
 
         fig.add_trace(
-            go.Bar(x=months, y=mo_units, name="Monthly Units", marker_color="#a6e3a1", text=[f"{u:.0f}" for u in mo_units], textposition="outside", textfont=dict(size=8)),
+            go.Bar(x=months, y=mo_units, name="Monthly Units" if lang == "en" else "মাসিক ইউনিট", marker_color="#a6e3a1", text=[f"{u:.0f}" for u in mo_units], textposition="outside", textfont=dict(size=8, family=FONT_FAMILY)),
             row=4, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=months, y=mo_taka, name="Monthly Bill (৳)", mode="lines+markers", line=dict(color="#f9e2af", width=2.5), marker=dict(size=6)),
+            go.Scatter(x=months, y=mo_taka, name="Monthly Bill (৳)" if lang == "en" else "মাসিক বিল (৳)", mode="lines+markers", line=dict(color="#f9e2af", width=2.5), marker=dict(size=6)),
             row=4, col=1, secondary_y=True
         )
 
     fig.update_layout(
         title=dict(
             text=t_title,
-            font=dict(size=16, color="#cdd6f4"),
+            font=dict(size=16, color="#cdd6f4", family=FONT_FAMILY),
             x=0.02,
         ),
         paper_bgcolor="#11111b",
         plot_bgcolor="#181825",
-        font=dict(color="#a6adc8"),
+        font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=70, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
         width=950,
         height=950,
     )
