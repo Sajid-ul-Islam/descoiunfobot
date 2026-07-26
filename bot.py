@@ -194,16 +194,11 @@ def main_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
-            InlineKeyboardButton(get_msg(lang, "palli_btn"), callback_data="palli_info"),
-            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),  callback_data="bpdb_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
-            InlineKeyboardButton(get_msg(lang, "postpaid_btn"),  callback_data="postpaid_info"),
-        ],
-        [
+            InlineKeyboardButton(get_msg(lang, "other_btn"),    callback_data="other_menu"),
             InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
-            InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "help_btn"), callback_data="help"),
         ],
     ])
 
@@ -262,6 +257,22 @@ def settings_keyboard(lang: str = "en"):
             InlineKeyboardButton("🇧🇩 বাংলা",  callback_data="set_lang_bn"),
         ],
         [InlineKeyboardButton("⚡ Change Utility Provider", callback_data="select_provider")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
+
+def other_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(get_msg(lang, "palli_btn"), callback_data="palli_info"),
+            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),  callback_data="bpdb_info"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "postpaid_btn"),  callback_data="postpaid_info"),
+            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "token_btn"), callback_data="token_info"),
+        ],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
@@ -403,6 +414,16 @@ async def provider_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg_text,
         parse_mode="Markdown",
         reply_markup=provider_selector_keyboard(lang),
+    )
+
+
+async def other_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/other")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_msg(lang, "other_title"),
+        parse_mode="Markdown",
+        reply_markup=other_keyboard(lang),
     )
 
 
@@ -914,6 +935,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "other_menu":
+        lang = get_lang(update, context)
+        await send(
+            get_msg(lang, "other_title"),
+            parse_mode="Markdown",
+            reply_markup=other_keyboard(lang),
+        )
+        return
+
     if data.startswith("set_prov_"):
         prov_code = data.replace("set_prov_", "")
         set_user_provider(update.effective_user.id, prov_code)
@@ -1148,6 +1178,7 @@ async def setup_commands(app):
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
         BotCommand("provider", "⚡ Select electricity provider"),
+        BotCommand("other",    "🌐 Other providers & services"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
         BotCommand("bpdb",     "🏢 BPDB (Chattogram & Zones) info"),
         BotCommand("token",    "🔑 Missing token recovery guide"),
@@ -1220,13 +1251,14 @@ def main():
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("provider", provider_cmd))
+    app.add_handler(CommandHandler("other",    other_cmd))
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
