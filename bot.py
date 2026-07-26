@@ -23,7 +23,7 @@ from telegram.ext import (
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language, get_user_provider, set_user_provider
-from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
+from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart, generate_custom_date_range_chart
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_nesco_text, get_all_coverage_text
@@ -225,7 +225,7 @@ def monthly_keyboard(lang: str = "en"):
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),      callback_data="start")],
     ])
 
-def chart_range_keyboard(lang: str = "en", days: int = 15):
+def chart_range_keyboard(lang: str = "en", days: int = 7):
     btn_7  = "✅ 7 Days" if days == 7 else "7 Days"
     btn_15 = "✅ 15 Days" if days == 15 else "15 Days"
     btn_30 = "✅ 30 Days" if days == 30 else "30 Days"
@@ -239,7 +239,8 @@ def chart_range_keyboard(lang: str = "en", days: int = 15):
             InlineKeyboardButton(btn_60, callback_data="range_60"),
         ],
         [
-            InlineKeyboardButton("📅 Specific Date Lookup", callback_data="range_date"),
+            InlineKeyboardButton("📅 Specific Date", callback_data="range_date"),
+            InlineKeyboardButton("📆 Date-to-Date Range", callback_data="range_custom_dates"),
         ],
         [
             InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start"),
@@ -562,9 +563,17 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send(ai_reply, parse_mode="Markdown", reply_markup=main_keyboard(lang))
         return ConversationHandler.END
 
-    if pending == "date_lookup" or "-" in user_input:
+    if pending in ["date_lookup", "date_range_lookup"] or " to " in user_input.lower() or " - " in user_input:
         if account_no and system:
             context.user_data.pop("pending_action", None)
+            if " to " in user_input.lower() or " - " in user_input or pending == "date_range_lookup":
+                parts = user_input.lower().replace(" to ", " - ").split(" - ")
+                if len(parts) >= 2:
+                    s_date = parts[0].strip()
+                    e_date = parts[1].strip()
+                    await send(f"🔍 Searching usage for date range `{s_date}` to `{e_date}`...", parse_mode="Markdown")
+                    await lookup_date_range(send, account_no, system, meter_no, s_date, e_date, context, update=update)
+                    return ConversationHandler.END
             await send("🔍 Searching date records...")
             await lookup_specific_date(send, account_no, system, meter_no, user_input, context)
             return ConversationHandler.END
@@ -1057,6 +1066,69 @@ async def lookup_specific_date(send_fn, account_no, system, meter_no, target_dat
         reply_markup=main_keyboard(),
     )
 
+
+async def lookup_date_range(send_fn, account_no, system, meter_no, start_date_str, end_date_str, context, update: Update = None):
+    today = date.today()
+    date_from = (today - timedelta(days=90)).strftime("%Y-%m-%d")
+    date_to   = today.strftime("%Y-%m-%d")
+    prov = context.user_data.get("provider", "desco")
+    daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+    if not daily_data or len(daily_data) < 2:
+        await send_fn("⚠️ No daily usage data available for range lookup.", reply_markup=back_keyboard())
+        return
+
+    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
+    filtered = []
+
+    for i in range(1, len(sorted_daily)):
+        curr_d = str(sorted_daily[i].get("date", ""))
+        if start_date_str <= curr_d[-len(start_date_str):] and curr_d[-len(end_date_str):] <= end_date_str:
+            u_curr = float(sorted_daily[i].get("consumedUnit") or 0)
+            u_prev = float(sorted_daily[i-1].get("consumedUnit") or 0)
+            units  = max(u_curr - u_prev, 0)
+
+            t_curr = float(sorted_daily[i].get("consumedTaka") or 0)
+            t_prev = float(sorted_daily[i-1].get("consumedTaka") or 0)
+            taka   = max(t_curr - t_prev, 0)
+
+            filtered.append({"date": curr_d, "units": round(units, 2), "taka": round(taka, 2)})
+
+    if not filtered:
+        await send_fn(f"❌ No records found between `{start_date_str}` and `{end_date_str}`.\n\nPlease check dates and try again.", parse_mode="Markdown", reply_markup=back_keyboard())
+        return
+
+    total_units = sum(r["units"] for r in filtered)
+    total_taka  = sum(r["taka"] for r in filtered)
+    num_days    = len(filtered)
+    avg_units   = total_units / num_days if num_days > 0 else 0
+    avg_taka    = total_taka / num_days if num_days > 0 else 0
+    avg_rate    = total_taka / total_units if total_units > 0 else 0
+
+    lang = get_lang(update, context) if update else "en"
+    buf  = generate_custom_date_range_chart(filtered, account_no, system, start_date_str, end_date_str, lang=lang)
+
+    summary_text = (
+        f"📅 *Custom Date Range Usage Summary*\n"
+        f"🗓 *Range:* `{start_date_str}` to `{end_date_str}` ({num_days} Days)\n"
+        f"🔑 Account: `{account_no}` _{system}_\n\n"
+        f"⚡ *Total Units Consumed:* `{total_units:.2f} kWh`\n"
+        f"💰 *Total Cost:* *৳{total_taka:.2f}*\n"
+        f"📉 *Daily Average:* `{avg_units:.2f} kWh/day` (~৳{avg_taka:.2f}/day)\n"
+        f"📊 *Effective Avg Rate:* `@৳{avg_rate:.2f} / kWh`"
+    )
+
+    msg_target = update.effective_message if update else None
+    if buf and msg_target:
+        await msg_target.reply_photo(
+            photo=buf,
+            caption=summary_text,
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(lang),
+        )
+    else:
+        await send_fn(summary_text, parse_mode="Markdown", reply_markup=main_keyboard(lang))
+
 async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     lang = get_lang(None, context)
@@ -1189,6 +1261,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📅 *Specific Date Usage Lookup*\n\n"
             "Please type the date you want to inspect in `YYYY-MM-DD` or `MM-DD` format:\n"
             "_(Example: `2026-07-25` or `07-25`)_\n\n"
+            "Or type /cancel to go back.",
+            parse_mode="Markdown",
+        )
+        return ASK_ACCOUNT
+
+    if data == "range_custom_dates":
+        context.user_data["pending_action"] = "date_range_lookup"
+        await send(
+            "📆 *Custom Date Range Lookup*\n\n"
+            "Please type your desired date range in `YYYY-MM-DD to YYYY-MM-DD` or `MM-DD to MM-DD` format:\n"
+            "_(Example: `2026-07-01 to 2026-07-20` or `07-01 to 07-20`)_\n\n"
             "Or type /cancel to go back.",
             parse_mode="Markdown",
         )
@@ -1532,7 +1615,7 @@ def main():
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|ai_info|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|ai_info|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date|range_custom_dates)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 

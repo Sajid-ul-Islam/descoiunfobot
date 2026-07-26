@@ -421,3 +421,80 @@ def generate_usage_chart(
 
     img_bytes = pio.to_image(fig, format="png", engine="kaleido")
     return io.BytesIO(img_bytes)
+
+
+def generate_custom_date_range_chart(
+    filtered_records: list,
+    account_no: str,
+    system: str,
+    start_date: str,
+    end_date: str,
+    lang: str = "en"
+) -> io.BytesIO | None:
+    """Generates a Plotly PNG Spline Area chart for a custom date-to-date range."""
+    if not filtered_records or len(filtered_records) < 1:
+        return None
+
+    dates = [r["date"][-5:] for r in filtered_records]
+    units = [r["units"] for r in filtered_records]
+    taka  = [r["taka"]  for r in filtered_records]
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # 1. Glowing Spline Area for Units
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=units,
+            name="Units (kWh)" if lang == "en" else "ইউনিট (kWh)",
+            mode="lines+markers",
+            line=dict(color="#89b4fa", width=3, shape="spline"),
+            fill="tozeroy",
+            fillcolor="rgba(137, 180, 250, 0.20)",
+            marker=dict(size=7, color="#89b4fa", symbol="circle"),
+            text=[f"{u:.1f}" for u in units],
+            textposition="top center",
+            textfont=dict(color="#cdd6f4", size=9, family=FONT_FAMILY),
+        ),
+        secondary_y=False,
+    )
+
+    # 2. Glowing Cost Spline Line
+    fig.add_trace(
+        go.Scatter(
+            x=dates,
+            y=taka,
+            name="Cost (৳)" if lang == "en" else "খরচ (৳)",
+            mode="lines+markers",
+            line=dict(color="#fab387", width=3, shape="spline"),
+            marker=dict(size=7, color="#fab387", symbol="diamond"),
+        ),
+        secondary_y=True,
+    )
+
+    title_text = (
+        f"Date Range Usage: {start_date} to {end_date} — Account: {account_no} ({system})"
+        if lang == "en"
+        else f"তারিখের পরিসীমা ব্যবহার: {start_date} থেকে {end_date} — অ্যাকাউন্ট: {account_no} ({system})"
+    )
+
+    fig.update_layout(
+        title=dict(
+            text=title_text,
+            font=dict(size=14, color="#cdd6f4", family=FONT_FAMILY),
+            x=0.02,
+        ),
+        paper_bgcolor="#11111b",
+        plot_bgcolor="#181825",
+        font=dict(color="#a6adc8", family=FONT_FAMILY),
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
+        xaxis=dict(title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, titlefont=dict(family=FONT_FAMILY)),
+        yaxis2=dict(title="Cost (৳)" if lang == "en" else "খরচ (৳)", showgrid=False, titlefont=dict(family=FONT_FAMILY)),
+        width=850,
+        height=480,
+    )
+
+    img_bytes = pio.to_image(fig, format="png", engine="kaleido")
+    return io.BytesIO(img_bytes)
