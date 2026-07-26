@@ -23,7 +23,7 @@ from telegram.ext import (
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from db import init_db, track_user, get_admin_stats
-from chart_gen import generate_daily_chart, generate_monthly_chart, generate_usage_chart
+from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 
 # =====================================
 # CONFIG
@@ -218,6 +218,12 @@ def monthly_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📈 View Monthly Chart", callback_data="chart_monthly")],
         [InlineKeyboardButton("🏠 Main Menu",          callback_data="start")],
+    ])
+
+def recharge_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📈 View Recharge Chart", callback_data="chart_recharge")],
+        [InlineKeyboardButton("🏠 Main Menu",           callback_data="start")],
     ])
 
 def postpaid_keyboard():
@@ -555,7 +561,7 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             + "\n\n".join(lines),
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=recharge_keyboard(),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -808,6 +814,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ASK_ACCOUNT
         return
 
+    if data == "chart_recharge":
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system")
+        meter_no   = context.user_data.get("meter_no", "")
+        if account_no and system:
+            await query.message.reply_text("⏳ Generating recharge Plotly chart...")
+            today     = date.today()
+            date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
+            date_to   = today.strftime("%Y-%m-%d")
+            recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, dateFrom=date_from, dateTo=date_to)
+            buf = generate_recharge_chart(recharge_data or [], account_no, system)
+            if buf:
+                await query.message.reply_photo(photo=buf, caption=f"💳 *Recharge History Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=recharge_keyboard())
+            else:
+                await send("⚠️ Recharge chart data unavailable.", reply_markup=back_keyboard())
+        else:
+            await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_RECHARGE
+            return ASK_ACCOUNT
+        return
+
     ACTION_MAP = {
         "balance":  (ACTION_BALANCE,  fetch_and_send_balance),
         "info":     (ACTION_INFO,     fetch_and_send_info),
@@ -944,7 +971,7 @@ def main():
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("postpaid", postpaid_command if 'postpaid_command' in locals() else postpaid_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|chart_daily|chart_monthly)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 

@@ -145,6 +145,57 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str) -> 
     return io.BytesIO(img_bytes)
 
 
+def generate_recharge_chart(recharge_data: list, account_no: str, system: str) -> io.BytesIO | None:
+    """Generates a Plotly PNG bar chart for recharge history."""
+    if not recharge_data:
+        return None
+
+    records = recharge_data if isinstance(recharge_data, list) else [recharge_data]
+    records = sorted(records, key=lambda x: str(x.get("rechargeDate") or x.get("date", "")))[-15:]
+
+    dates = []
+    amts  = []
+    for r in records:
+        raw_dt = r.get("rechargeDate") or r.get("date", "")
+        dt = raw_dt[:10] if len(raw_dt) >= 10 else raw_dt
+        amt = float(r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount") or 0)
+        dates.append(dt)
+        amts.append(amt)
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            x=dates,
+            y=amts,
+            name="Recharge Amount (৳)",
+            marker_color="#a6e3a1",
+            text=[f"৳{int(a)}" for a in amts],
+            textposition="outside",
+            textfont=dict(color="#a6e3a1", size=9),
+        )
+    )
+
+    fig.update_layout(
+        title=dict(
+            text=f"💳 Recharge History — Account: {account_no} ({system})",
+            font=dict(size=15, color="#cdd6f4"),
+            x=0.02,
+        ),
+        paper_bgcolor="#11111b",
+        plot_bgcolor="#181825",
+        font=dict(color="#a6adc8"),
+        margin=dict(l=40, r=40, t=60, b=40),
+        xaxis=dict(title="Recharge Date", gridcolor="#313244", showgrid=True),
+        yaxis=dict(title="Amount (৳)", gridcolor="#313244", showgrid=True),
+        width=850,
+        height=480,
+    )
+
+    img_bytes = pio.to_image(fig, format="png", engine="kaleido")
+    return io.BytesIO(img_bytes)
+
+
 def generate_usage_chart(daily_data: list, monthly_data: list, account_no: str, system: str) -> io.BytesIO:
     """
     Generates a Plotly dual-panel dashboard (Daily + Monthly) and returns a PNG BytesIO buffer.
