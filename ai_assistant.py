@@ -4,10 +4,6 @@
 import os
 import requests
 
-GEMINI_API_KEY     = os.environ.get("GEMINI_API_KEY", "")
-GROQ_API_KEY       = os.environ.get("GROQ_API_KEY", "")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-
 SYSTEM_PROMPT = """You are 'EnergyBuddy AI', an expert Bangladesh electricity assistant embedded in a Telegram Bot.
 You assist customers of DESCO, BPDB, Palli Bidyut (BREB), DPDC, WZPDCL, and NESCO.
 
@@ -20,9 +16,10 @@ Your capabilities:
 
 def query_gemini(full_prompt: str) -> str | None:
     """Queries Google AI Studio (Gemini Flash) API."""
-    if not GEMINI_API_KEY:
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not key:
         return None
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
     payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
     try:
         r = requests.post(url, json=payload, timeout=10)
@@ -38,10 +35,11 @@ def query_gemini(full_prompt: str) -> str | None:
 
 def query_groq(full_prompt: str) -> str | None:
     """Queries Groq Cloud API (Llama 3 8B/70B)."""
-    if not GROQ_API_KEY:
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not key:
         return None
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
         "model": "llama3-70b-8192",
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": full_prompt}],
@@ -59,10 +57,11 @@ def query_groq(full_prompt: str) -> str | None:
 
 def query_openrouter(full_prompt: str) -> str | None:
     """Queries OpenRouter API (Free Tier Models)."""
-    if not OPENROUTER_API_KEY:
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
         return None
     url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
         "model": "mistralai/mistral-7b-instruct:free",
         "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": full_prompt}],
@@ -106,7 +105,7 @@ def query_ai_assistant(user_prompt: str, context_data: dict = None, lang: str = 
     if answer:
         return answer
 
-    # Fallback response if no keys provided
+    # Fallback response if no keys provided or all fail
     if lang == "bn":
         return (
             "🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট*\n\n"

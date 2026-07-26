@@ -740,7 +740,7 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         s = calc_stats(bal_data, info_data)
-        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s["load_pct'] is not None else ""
+        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s['load_pct'] is not None else ""
         conn_line = f"🏗 Connection Age: `{s['conn_age']}`\n"  if s["conn_age"]            else ""
         
         lang = get_lang(None, context)
