@@ -781,6 +781,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_photo(photo=buf, caption=f"📆 *Daily Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=daily_keyboard())
             else:
                 await send("⚠️ Daily chart data unavailable.", reply_markup=back_keyboard())
+        else:
+            await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_DAILY
+            return ASK_ACCOUNT
         return
 
     if data == "chart_monthly":
@@ -798,6 +802,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_photo(photo=buf, caption=f"📅 *Monthly Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=monthly_keyboard())
             else:
                 await send("⚠️ Monthly chart data unavailable.", reply_markup=back_keyboard())
+        else:
+            await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_MONTHLY
+            return ASK_ACCOUNT
         return
 
     ACTION_MAP = {
@@ -936,7 +944,7 @@ def main():
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("postpaid", postpaid_command if 'postpaid_command' in locals() else postpaid_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|chart_daily|chart_monthly)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
