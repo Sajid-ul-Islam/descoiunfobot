@@ -433,7 +433,7 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
     await send_fn("⏳ Fetching recharge history...")
     try:
         today     = date.today()
-        date_from = (today - relativedelta(months=12)).strftime("%Y-%m-%d")
+        date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
         date_to   = today.strftime("%Y-%m-%d")
         data, code, desc = desco_get(
             system, "getRechargeHistory", account_no, meter_no,
@@ -447,16 +447,16 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
         lines   = []
         for r in records[:15]:  # max 15 entries
             dt  = r.get("rechargeDate") or r.get("date", "N/A")
-            amt = r.get("rechargeAmount") or r.get("amount", "N/A")
+            amt = r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount", "N/A")
             tok = r.get("tokenNo", "")
             line = f"📆 `{dt}` — *৳{amt}*"
             if tok:
-                line += f" | `{tok}`"
+                line += f"\n   🔑 Token: `{tok}`"
             lines.append(line)
         await send_fn(
             f"💳 *Recharge History* (last 12 months)\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
-            + "\n".join(lines),
+            + "\n\n".join(lines),
             parse_mode="Markdown",
             reply_markup=main_keyboard(),
         )
@@ -479,17 +479,17 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         records = data if isinstance(data, list) else [data]
+        # Sort by month descending
+        records = sorted(records, key=lambda x: str(x.get("month", "")), reverse=True)
         lines   = []
         for r in records[:12]:
             month = r.get("month") or r.get("readingMonth", "N/A")
-            units = r.get("consumption") or r.get("unit", "N/A")
-            bill  = r.get("amount") or r.get("billAmount", "")
-            line  = f"📅 `{month}` — `{units} Unit`"
-            if bill:
-                line += f" | ৳{bill}"
+            units = r.get("consumedUnit") or r.get("consumption") or r.get("unit", "0")
+            taka  = r.get("consumedTaka") or r.get("amount") or r.get("billAmount", "0")
+            line  = f"📅 `{month}` — `{float(units):.2f} Unit` | *৳{float(taka):.2f}*"
             lines.append(line)
         await send_fn(
-            f"📅 *Monthly Consumption* (last 12 months)\n"
+            f"📊 *Monthly Consumption* (last 12 months)\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             + "\n".join(lines),
             parse_mode="Markdown",
