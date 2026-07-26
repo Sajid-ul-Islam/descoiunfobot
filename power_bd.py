@@ -1,64 +1,101 @@
-# Bangladesh Electricity Utility Providers Guide — BPDB, BREB/Palli Bidyut, DESCO, DPDC, WZPDCL, NESCO
+# Complete Bangladesh Electricity Distribution Network & Providers Guide
+# Covers: DESCO, DPDC, BPDB, BREB (Palli Bidyut), WZPDCL, NESCO
 
-PROVIDERS_DATA = {
+ALL_PROVIDERS = {
+    "desco": {
+        "name_en": "⚡ DESCO — Dhaka North",
+        "name_bn": "⚡ ডেসকো — ঢাকা উত্তর",
+        "coverage_en": "Mirpur, Gulshan, Uttara, Tongi, Banani, Baridhara, Kafrul, Airport, Nikunja.",
+        "coverage_bn": "মিরপুর, গুলশান, উত্তরা, টঙ্গী, বনানী, বারিধারা, কাফরুল, বিমানবন্দর, নিকুঞ্জ।",
+        "helpline": "16120",
+        "portal": "https://prepaid.desco.org.bd/",
+    },
+    "dpdc": {
+        "name_en": "🌆 DPDC — Dhaka South & Narayanganj",
+        "name_bn": "🌆 ডিপিডিসি — ঢাকা দক্ষিণ ও নারায়ণগঞ্জ",
+        "coverage_en": "Dhanmondi, Lalbagh, Motijheel, Ramna, Azimpur, Tejgaon, Narayanganj.",
+        "coverage_bn": "ধানমন্ডি, লালবাগ, মতিঝিল, রমনা, আজিমপুর, তেজগাঁও, নারায়ণগঞ্জ।",
+        "helpline": "16116",
+        "portal": "https://dpdc.org.bd/",
+    },
     "bpdb": {
-        "name_en": "BPDB (Chattogram & Regional Zones)",
-        "name_bn": "বিপিডিবি (চট্টগ্রাম ও আঞ্চলিক জোন)",
-        "desc_en": (
-            "🏢 *BPDB (Bangladesh Power Development Board)*\n\n"
-            "📍 *Chattogram City Zone Coverage:*\n"
-            "• Agrabad, Halishahar, Chandgaon, Khulshi, Nasirabad, Chawkbazar.\n"
-            "• BPDB directly manages retail electricity distribution to homes and commercial spaces here.\n\n"
-            "🌐 *Prepaid Portal:* [prepaid.bpdb.gov.bd](https://prepaid.bpdb.gov.bd/)\n"
-            "📞 *Chattogram Helpline:* **16200** / Central: **16131**\n\n"
-            "📱 *MFS Bill Pay:* bKash / Nagad → Pay Bill → BPDB Prepaid/Postpaid"
-        ),
-        "desc_bn": (
-            "🏢 *বিপিডিবি (বাংলাদেশ বিদ্যুৎ উন্নয়ন বোর্ড)*\n\n"
-            "📍 *চট্টগ্রাম সিটি জোন কভারেজ:*\n"
-            "• আগ্রাবাদ, হালিশহর, চান্দগাঁও, খুলশী, নাসিরাবাদ, চকবাজার।\n"
-            "• বিপিডিবি সরাসরি এসব এলাকায় বিদ্যুৎ সরবরাহ নিয়ন্ত্রণ করে।\n\n"
-            "🌐 *প্রিপেইড পোর্টাল:* [prepaid.bpdb.gov.bd](https://prepaid.bpdb.gov.bd/)\n"
-            "📞 *চট্টগ্রাম হেল্পলাইন:* **১৬২০০** / সেন্ট্রাল: **১৬১৩১**\n\n"
-            "📱 *মোবাইল পেমেন্ট:* বিকাশ / নগদ → পে বিল → বিপিডিবি প্রিপেইড/পোস্টপেইড"
-        ),
+        "name_en": "🏢 BPDB — Chattogram & Regional Urban Zones",
+        "name_bn": "🏢 বিপিডিবি — চট্টগ্রাম ও আঞ্চলিক শহর জোন",
+        "coverage_en": "Chattogram City (Agrabad, Halishahar, Khulshi, Chandgaon), Sylhet, Mymensingh.",
+        "coverage_bn": "চট্টগ্রাম শহর (আগ্রাবাদ, হালিশহর, খুলশী, চান্দগাঁও), সিলেট, ময়মনসিংহ।",
+        "helpline": "16200 / 16131",
+        "portal": "https://prepaid.bpdb.gov.bd/",
     },
     "breb": {
-        "name_en": "Chattogram Palli Bidyut (PBS-1, 2, 3) & BREB",
-        "name_bn": "চট্টগ্রাম পল্লী বিদ্যুৎ (পিবিএস ১, ২, ৩) ও বিআরইবি",
-        "desc_en": (
-            "🌾 *Chattogram Palli Bidyut Samity (PBS-1, PBS-2, PBS-3)*\n\n"
-            "📍 *Suburban & Industrial Zone Coverage:*\n"
-            "• Sitakunda, Hathazari, Mirsharai, Patiya, Boalkhali, Anwara, Raozan.\n"
-            "• Operated under Bangladesh Rural Electrification Board (BREB).\n\n"
-            "📞 *Emergency Hotline:* **16899** (BREB 24/7 Call Center)\n"
-            "📱 *USSD Service:* Dial `*727#` on any phone\n\n"
-            "📟 *Meter Keypad Codes:*\n"
-            "• *Hexing:* `801` (Balance ৳)\n"
-            "• *Intech:* `00` (Balance ৳)\n"
-            "• *Sanxing:* `00` (Balance ৳)\n"
-            "• *Shenzhen:* `801` (Balance ৳)\n\n"
-            "📱 *MFS Pay:* bKash/Nagad/Rocket → Pay Bill → Palli Bidyut"
-        ),
-        "desc_bn": (
-            "🌾 *চট্টগ্রাম পল্লী বিদ্যুৎ সমিতি (পিবিএস-১, পিবিএস-২, পিবিএস-৩)*\n\n"
-            "📍 *উপজেলা ও শিল্পাঞ্চল কভারেজ:*\n"
-            "• সীতাকুণ্ড, হাঠহাজারী, মীরসরাই, পটিয়া, বোয়ালখালী, আনোয়ারা, রাউজান।\n"
-            "• বাংলাদেশ পল্লী বিদ্যুতায়ন বোর্ডের (বিআরইবি) অধীনে পরিচালিত।\n\n"
-            "📞 *জরুরি হটলাইন:* **১৬৮৯৯** (বিআরইবি ২৪/৭ কল সেন্টার)\n"
-            "📱 *ইউএসএসডি সেবা:* যে কোনো ফোনে `*৭২৭#` ডায়াল করুন\n\n"
-            "📟 *মিটার কিপ্যাড কোড:*\n"
-            "• *Hexing:* `801` (ব্যালেন্স ৳)\n"
-            "• *Intech:* `00` (ব্যালেন্স ৳)\n"
-            "• *Sanxing:* `00` (ব্যালেন্স ৳)\n"
-            "• *Shenzhen:* `801` (ব্যালেন্স ৳)\n\n"
-            "📱 *মোবাইল পেমেন্ট:* বিকাশ/নগদ/রকেট → পে বিল → পল্লী বিদ্যুৎ"
-        ),
+        "name_en": "🌾 Palli Bidyut (BREB) — All Rural & Suburbs (64 Districts)",
+        "name_bn": "🌾 পল্লী বিদ্যুৎ (বিআরইবি) — দেশের সকল গ্রাম ও উপজেলা (৬৪ জেলা)",
+        "coverage_en": "80 Palli Bidyut Samity (PBS) units across rural Bangladesh & district outskirts.",
+        "coverage_bn": "দেশের ৮০টি পল্লী বিদ্যুৎ সমিতি (পিবিএস) ও উপজেলা সমূহ।",
+        "helpline": "16899",
+        "portal": "http://www.reb.gov.bd/",
+    },
+    "wzpdcl": {
+        "name_en": "🌊 WZPDCL — West Zone (Khulna, Barishal, Greater Faridpur)",
+        "name_bn": "🌊 ওজোপাডিকো — পশ্চিম জোন (খুলনা, বরিশাল, বৃহত্তর ফরিদপুর)",
+        "coverage_en": "Khulna division, Barishal division, Faridpur, Jessore, Kushtia urban areas.",
+        "coverage_bn": "খুলনা বিভাগ, বরিশাল বিভাগ, ফরিদপুর, যশোর, কুষ্টিয়া শহর অঞ্চল।",
+        "helpline": "16117",
+        "portal": "https://wzpdcl.gov.bd/",
+    },
+    "nesco": {
+        "name_en": "❄️ NESCO — North Zone (Rajshahi & Rangpur Divisions)",
+        "name_bn": "❄️ নেসকো — উত্তর জোন (রাজশাহী ও রংপুর বিভাগ)",
+        "coverage_en": "Rajshahi, Rangpur, Bogura, Pabna, Dinajpur, Naogaon urban centers.",
+        "coverage_bn": "রাজশাহী, রংপুর, বগুড়া, পাবনা, দিনাজপুর, নওগাঁ শহর জোন।",
+        "helpline": "16603",
+        "portal": "https://nesco.gov.bd/",
     }
 }
 
-def get_bpdb_text(lang: str = "en") -> str:
-    return PROVIDERS_DATA["bpdb"]["desc_bn" if lang == "bn" else "desc_en"]
+def get_all_coverage_text(lang: str = "en") -> str:
+    if lang == "bn":
+        lines = [
+            "🇧🇩 *বাংলাদেশের পূর্ণাঙ্গ বিদ্যুৎ সরবরাহকারী ডিরেক্টরি*\n",
+            "বাংলাদেশের বিদ্যুৎ বিতরণ ব্যবস্থা ৬টি প্রধান প্রতিষ্ঠানে বিভক্ত:\n"
+        ]
+        for key, p in ALL_PROVIDERS.items():
+            lines.append(
+                f"*{p['name_bn']}*\n"
+                f"📍 *কভারেজ:* {p['coverage_bn']}\n"
+                f"📞 *হটলাইন:* **{p['helpline']}**\n"
+                f"🌐 *ওয়েবসাইট:* [পোর্টাল দেখুন]({p['portal']})\n"
+            )
+        return "\n".join(lines)
+    else:
+        lines = [
+            "🇧🇩 *Complete Bangladesh Power Grid Directory*\n",
+            "Electricity in Bangladesh is distributed by 6 primary power entities:\n"
+        ]
+        for key, p in ALL_PROVIDERS.items():
+            lines.append(
+                f"*{p['name_en']}*\n"
+                f"📍 *Coverage:* {p['coverage_en']}\n"
+                f"📞 *Hotline:* **{p['helpline']}**\n"
+                f"🌐 *Portal:* [Visit Portal]({p['portal']})\n"
+            )
+        return "\n".join(lines)
 
-def get_chattogram_pbs_text(lang: str = "en") -> str:
-    return PROVIDERS_DATA["breb"]["desc_bn" if lang == "bn" else "desc_en"]
+def get_bpdb_text(lang: str = "en") -> str:
+    p = ALL_PROVIDERS["bpdb"]
+    if lang == "bn":
+        return (
+            f"🏢 *{p['name_bn']}*\n\n"
+            f"📍 *কভারেজ:* {p['coverage_bn']}\n"
+            "• বিপিডিবি সরাসরি এসব এলাকায় বিদ্যুৎ সরবরাহ বিষয়াবলী পরিচালনা করে।\n\n"
+            f"🌐 *প্রিপেইড পোর্টাল:* [prepaid.bpdb.gov.bd]({p['portal']})\n"
+            f"📞 *হেল্পলাইন:* **{p['helpline']}**\n\n"
+            "📱 *মোবাইল পেমেন্ট:* বিকাশ / নগদ → পে বিল → বিপিডিবি"
+        )
+    return (
+        f"🏢 *{p['name_en']}*\n\n"
+        f"📍 *Coverage:* {p['coverage_en']}\n"
+        "• BPDB directly manages retail electricity distribution to homes and commercial spaces.\n\n"
+        f"🌐 *Prepaid Portal:* [prepaid.bpdb.gov.bd]({p['portal']})\n"
+        f"📞 *Helpline:* **{p['helpline']}**\n\n"
+        "📱 *MFS Bill Pay:* bKash / Nagad → Pay Bill → BPDB"
+    )
