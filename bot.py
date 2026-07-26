@@ -5,7 +5,14 @@ import urllib3
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ConversationHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 # =====================================
 # SSL WARNING DISABLE
@@ -21,24 +28,25 @@ urllib3.disable_warnings(
 
 load_dotenv()
 
-BOT_TOKEN        = os.getenv("BOT_TOKEN")
-ACCOUNT_NO       = os.getenv("ACCOUNT_NO")
-CHAT_ID          = int(os.getenv("CHAT_ID"))
-LOW_BALANCE_LIMIT = int(os.getenv("LOW_BALANCE_LIMIT", 100))
-WEBHOOK_URL      = os.getenv("WEBHOOK_URL")   # e.g. https://descoinfo.onrender.com
-PORT             = int(os.getenv("PORT", 10000))
+BOT_TOKEN   = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT        = int(os.getenv("PORT", 10000))
 
-ALLOWED_USERS = {CHAT_ID}
+# =====================================
+# CONVERSATION STATES
+# =====================================
+
+WAITING_FOR_ACCOUNT = 0
 
 # =====================================
 # DESCO API
 # =====================================
 
-def get_balance_data():
+def get_balance_data(account_no: str):
 
     url = (
         "https://prepaid.desco.org.bd/api/unified/"
-        f"customer/getBalance?accountNo={ACCOUNT_NO}"
+        f"customer/getBalance?accountNo={account_no}"
     )
 
     response = requests.get(
@@ -52,45 +60,54 @@ def get_balance_data():
     return result.get("data")
 
 # =====================================
-# ACCESS CONTROL
-# =====================================
-
-def is_allowed(update: Update) -> bool:
-    return update.effective_user.id in ALLOWED_USERS
-
-# =====================================
 # COMMANDS
 # =====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not is_allowed(update):
-        await update.message.reply_text("⛔ Unauthorized")
-        return
-
     await update.message.reply_text(
-        "⚡ DESCO Info Online\n\n"
+        "⚡ DESCO Info\n\n"
         "Commands:\n"
-        "/balance"
+        "/balance — Check your prepaid balance"
     )
 
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def balance_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not is_allowed(update):
-        await update.message.reply_text("⛔ Unauthorized")
-        return
+    await update.message.reply_text(
+        "🔢 Please enter your DESCO account number:"
+    )
+
+    return WAITING_FOR_ACCOUNT
+
+
+async def balance_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    account_no = update.message.text.strip()
+
+    if not account_no.isdigit():
+
+        await update.message.reply_text(
+            "❌ Invalid account number. Please enter digits only.\n"
+            "Try /balance again."
+        )
+
+        return ConversationHandler.END
+
+    await update.message.reply_text("⏳ Fetching balance...")
 
     try:
 
-        data = get_balance_data()
+        data = get_balance_data(account_no)
 
         if not data:
 
             await update.message.reply_text(
-                "❌ Account data পাওয়া যায়নি"
+                "❌ No data found for that account number.\n"
+                "Please check and try /balance again."
             )
-            return
+
+            return ConversationHandler.END
 
         balance_amount = data.get("balance", 0)
         monthly_usage  = data.get("currentMonthConsumption", 0)
@@ -99,6 +116,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg = (
             f"⚡ DESCO Info\n\n"
+            f"🔑 Account: {account_no}\n"
             f"💰 Balance: ৳{balance_amount}\n"
             f"📊 Monthly Usage: {float(monthly_usage):.2f} Unit\n"
             f"🔌 Meter: {meter_no}\n"
@@ -110,60 +128,17 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
 
         await update.message.reply_text(
-            f"❌ Error:\n{e}"
+            f"❌ Error fetching data:\n{e}"
         )
 
-# =====================================
-# LOW BALANCE ALERT
-# =====================================
+    return ConversationHandler.END
 
-async def low_balance_checker(app):
 
-    alert_sent = False
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    while True:
+    await update.message.reply_text("❌ Cancelled.")
 
-        try:
-
-            data = get_balance_data()
-
-            if data:
-
-                current_balance = float(data["balance"])
-
-                if current_balance <= LOW_BALANCE_LIMIT:
-
-                    if not alert_sent:
-
-                        await app.bot.send_message(
-                            chat_id=CHAT_ID,
-                            text=(
-                                "⚠️ LOW BALANCE ALERT\n\n"
-                                f"Current Balance: ৳{current_balance}"
-                            )
-                        )
-
-                        alert_sent = True
-
-                else:
-
-                    alert_sent = False
-
-        except Exception as e:
-
-            print("Check Error:", e)
-
-        await asyncio.sleep(1800)
-
-# =====================================
-# STARTUP
-# =====================================
-
-async def startup(app):
-
-    asyncio.create_task(
-        low_balance_checker(app)
-    )
+    return ConversationHandler.END
 
 # =====================================
 # MAIN
@@ -178,9 +153,25 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("balance", balance))
 
-    app.post_init = startup
+    balance_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("balance", balance_start)
+        ],
+        states={
+            WAITING_FOR_ACCOUNT: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    balance_fetch
+                )
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel)
+        ],
+    )
+
+    app.add_handler(balance_conv)
 
     print("DESCO Info Running (webhook)...")
 
