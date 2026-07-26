@@ -690,8 +690,11 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
             monthFrom=month_from, monthTo=month_to,
         )
 
-        # 3. Render chart
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system)
+        # 3. Fetch balance data for KPI card
+        bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no)
+
+        # 4. Render executive chart
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data)
 
         # 4. Send photo
         if msg_target:

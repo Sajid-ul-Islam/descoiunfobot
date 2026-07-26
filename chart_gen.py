@@ -1,4 +1,5 @@
 import io
+from datetime import date
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.io as pio
@@ -196,21 +197,60 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str) -
     return io.BytesIO(img_bytes)
 
 
-def generate_usage_chart(daily_data: list, monthly_data: list, account_no: str, system: str) -> io.BytesIO:
+def generate_usage_chart(
+    daily_data: list,
+    monthly_data: list,
+    account_no: str,
+    system: str,
+    bal_data: dict | None = None,
+    info_data: dict | None = None,
+) -> io.BytesIO:
     """
-    Generates a Plotly dual-panel dashboard (Daily + Monthly) and returns a PNG BytesIO buffer.
+    Generates a 3-tier Plotly Executive Dashboard with KPI Cards + Daily Trend + Monthly History.
     """
+    bal_val = float((bal_data or {}).get("balance", 0))
+    mo_use  = float((bal_data or {}).get("currentMonthConsumption", 0))
+
     fig = make_subplots(
-        rows=2, cols=1,
+        rows=3, cols=2,
+        column_widths=[0.5, 0.5],
+        row_heights=[0.18, 0.41, 0.41],
+        specs=[
+            [{"type": "indicator"}, {"type": "indicator"}],
+            [{"colspan": 2, "secondary_y": True}, None],
+            [{"colspan": 2, "secondary_y": True}, None],
+        ],
         subplot_titles=(
-            "⚡ Daily Unit Consumption (Past 15 Days)",
-            "📅 Monthly Usage & Cost Trend (Past 12 Months)"
+            "", "",
+            "⚡ Daily Unit Consumption & Cost Trend (Past 15 Days)",
+            "📅 12-Month Consumption & Bill Trend"
         ),
-        vertical_spacing=0.15,
-        specs=[[{"secondary_y": True}], [{"secondary_y": True}]]
+        vertical_spacing=0.10,
+        horizontal_spacing=0.05,
     )
 
-    # 1. Daily Subplot
+    # --- KPI Indicators (Row 1) ---
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=bal_val,
+            number={"prefix": "৳", "font": {"color": "#a6e3a1", "size": 32}},
+            title={"text": "💰 Current Balance", "font": {"color": "#cdd6f4", "size": 13}},
+        ),
+        row=1, col=1
+    )
+
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=mo_use,
+            number={"suffix": " kWh", "font": {"color": "#89b4fa", "size": 32}},
+            title={"text": "⚡ Month Usage", "font": {"color": "#cdd6f4", "size": 13}},
+        ),
+        row=1, col=2
+    )
+
+    # --- Daily Subplot (Row 2) ---
     if daily_data and len(daily_data) >= 2:
         sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
         dates, units, taka = [], [], []
@@ -231,15 +271,15 @@ def generate_usage_chart(daily_data: list, monthly_data: list, account_no: str, 
         taka  = taka[-15:]
 
         fig.add_trace(
-            go.Bar(x=dates, y=units, name="Daily Units", marker_color="#89b4fa", showlegend=True),
-            row=1, col=1, secondary_y=False
+            go.Bar(x=dates, y=units, name="Daily Units", marker_color="#89b4fa", text=[f"{u:.1f}" for u in units], textposition="outside", textfont=dict(size=8)),
+            row=2, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=dates, y=taka, name="Daily Cost (৳)", mode="lines+markers", line=dict(color="#fab387", width=2), showlegend=True),
-            row=1, col=1, secondary_y=True
+            go.Scatter(x=dates, y=taka, name="Daily Cost (৳)", mode="lines+markers", line=dict(color="#fab387", width=2.5), marker=dict(size=6)),
+            row=2, col=1, secondary_y=True
         )
 
-    # 2. Monthly Subplot
+    # --- Monthly Subplot (Row 3) ---
     if monthly_data:
         sorted_mo = sorted(monthly_data, key=lambda x: str(x.get("month", "")))[-12:]
         months   = [m.get("month", "")[-5:] for m in sorted_mo]
@@ -247,17 +287,17 @@ def generate_usage_chart(daily_data: list, monthly_data: list, account_no: str, 
         mo_taka  = [float(m.get("consumedTaka") or 0) for m in sorted_mo]
 
         fig.add_trace(
-            go.Bar(x=months, y=mo_units, name="Monthly Units", marker_color="#a6e3a1", showlegend=True),
-            row=2, col=1, secondary_y=False
+            go.Bar(x=months, y=mo_units, name="Monthly Units", marker_color="#a6e3a1", text=[f"{u:.0f}" for u in mo_units], textposition="outside", textfont=dict(size=8)),
+            row=3, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=months, y=mo_taka, name="Monthly Cost (৳)", mode="lines+markers", line=dict(color="#f9e2af", width=2), showlegend=True),
-            row=2, col=1, secondary_y=True
+            go.Scatter(x=months, y=mo_taka, name="Monthly Bill (৳)", mode="lines+markers", line=dict(color="#f9e2af", width=2.5), marker=dict(size=6)),
+            row=3, col=1, secondary_y=True
         )
 
     fig.update_layout(
         title=dict(
-            text=f"DESCO Analytics Dashboard — Account: {account_no} ({system})",
+            text=f"📊 DESCO Executive Analytics Dashboard — Account: {account_no} ({system})",
             font=dict(size=16, color="#cdd6f4"),
             x=0.02,
         ),
@@ -265,9 +305,9 @@ def generate_usage_chart(daily_data: list, monthly_data: list, account_no: str, 
         plot_bgcolor="#181825",
         font=dict(color="#a6adc8"),
         margin=dict(l=40, r=40, t=70, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        width=900,
-        height=750,
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+        width=950,
+        height=850,
     )
 
     img_bytes = pio.to_image(fig, format="png", engine="kaleido")
