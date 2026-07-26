@@ -25,7 +25,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 from i18n import get_msg
-from palli_bidyut import get_palli_text
+from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_all_coverage_text
 
 # =====================================
@@ -246,6 +246,7 @@ def postpaid_keyboard(lang: str = "en"):
 
 def palli_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔑 " + get_msg(lang, "token_btn"), callback_data="token_info")],
         [InlineKeyboardButton("🌐 BREB Official Portal", url="http://www.reb.gov.bd/")],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
@@ -380,6 +381,16 @@ async def palli_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_palli_text(lang),
         parse_mode="Markdown",
         reply_markup=palli_keyboard(lang),
+    )
+
+
+async def token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/token")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_token_help_text(lang),
+        parse_mode="Markdown",
+        reply_markup=back_keyboard(lang),
     )
 
 
@@ -870,6 +881,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "token_info":
+        lang = get_lang(update, context)
+        await send(
+            get_token_help_text(lang),
+            parse_mode="Markdown",
+            reply_markup=back_keyboard(lang),
+        )
+        return
+
     if data == "bpdb_info":
         lang = get_lang(update, context)
         await send(
@@ -1053,6 +1073,7 @@ async def setup_commands(app):
         BotCommand("recharge", "💳 Recharge history (12 months)"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
         BotCommand("bpdb",     "🏢 BPDB (Chattogram & Zones) info"),
+        BotCommand("token",    "🔑 Missing token recovery guide"),
         BotCommand("providers","🇧🇩 All Bangladesh power providers"),
         BotCommand("settings", "⚙️ Language & bot settings"),
         BotCommand("postpaid", "📄 Postpaid bill guidance & links"),
@@ -1124,9 +1145,10 @@ def main():
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
+    app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|bpdb_info|providers_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 

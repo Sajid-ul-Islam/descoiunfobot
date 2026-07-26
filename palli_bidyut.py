@@ -1,4 +1,4 @@
-# Palli Bidyut (BREB) Module — Information, Meter Keypad Codes, USSD, and MFS Payment Guide
+# Palli Bidyut (BREB) Module — Information, Meter Keypad Codes, USSD, MFS Payment & Missing Token Recovery Guide
 
 METER_CODES = {
     "Hexing": [
@@ -49,4 +49,33 @@ def get_palli_text(lang: str = "en") -> str:
         "• **bKash:** Pay Bill → Electricity (Prepaid/Postpaid) → Palli Bidyut\n"
         "• **Nagad:** Bill Pay → Palli Bidyut\n"
         "• **Rocket:** Utility Pay → Palli Bidyut (Biller ID: 200/201)"
+    )
+
+def get_token_help_text(lang: str = "en") -> str:
+    if lang == "bn":
+        return (
+            "🔑 *টাকা কেটেছে কিন্তু টোকেন পাননি? সমাধানের উপায়:*\n\n"
+            "১️⃣ **বিকাশ অ্যাপ থেকে টোকেন দেখুন (সবচেয়ে সহজ):**\n"
+            "• বিকাশ অ্যাপ ওপেন করুন → **ইনবক্স (Inbox)** বা **লেনদেন (Transactions)** এ যান।\n"
+            "• বিদ্যুৎ বিলের লেনদেনটিতে ট্যাপ করুন → নিচে **২০ ডিজিটের টোকেন (Token No)** দেখতে পাবেন!\n\n"
+            "২️⃣ **USSD ডায়াল করে টোকেন নিন:**\n"
+            "• মোবাইল থেকে `*৭২৭#` ডায়াল করুন → **Token Inquiry** বা **Last Token** অপশন বেছে নিন।\n\n"
+            "৩️⃣ **স্মার্ট মিটারে অটো রিচার্জ:**\n"
+            "• নতুন অনলাইন স্মার্ট মিটারে টোকেন হাতে টাইপ করতে হয় না। সার্ভার থেকে সরাসরি মিটারে ব্যালেন্স যোগ হয়ে যায়।\n\n"
+            "৪️⃣ **জরুরি হেল্পলাইন বা রিফান্ড:**\n"
+            "• টোকেন না পেলে পল্লী বিদ্যুৎ হটলাইন **১৬৮৯৯** এ বিকাশ Transaction ID (TrxID) সহ জানান।\n"
+            "• কোনো কারণে পেমেন্ট ব্যর্থ হলে বিকাশ ২৪-৪৮ ঘণ্টার মধ্যে টাকা আপনার অ্যাকাউন্টে রিফান্ড করে দেবে।"
+        )
+    return (
+        "🔑 *Money Deducted but Token Not Received? Solution:*\n\n"
+        "1️⃣ **Check Token in bKash App (Easiest):**\n"
+        "• Open bKash App → Go to **Inbox** or **Transactions**.\n"
+        "• Tap on the Electricity Pay Bill transaction → Your **20-digit Token Number** is listed right on the digital receipt!\n\n"
+        "2️⃣ **Get Token via USSD Dial:**\n"
+        "• Dial `*727#` on your mobile phone → Select **Token Inquiry** or **Last Token**.\n\n"
+        "3️⃣ **Automatic Smart Metering:**\n"
+        "• Modern online smart meters load the credit over-the-air (OTA) automatically without manual token entry.\n\n"
+        "4️⃣ **Hotline & Auto-Refund:**\n"
+        "• Call BREB Helpline **16899** with your bKash Transaction ID (TrxID).\n"
+        "• If the utility server fails to process the order, bKash automatically refunds the money to your account within 24-48 hours."
     )
