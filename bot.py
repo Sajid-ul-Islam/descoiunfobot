@@ -1,6 +1,7 @@
 import os
 import requests
 import urllib3
+from datetime import date
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
@@ -43,6 +44,8 @@ ASK_ACCOUNT = 0
 # What to do after collecting the account number
 ACTION_BALANCE  = "balance"
 ACTION_INFO     = "info"
+ACTION_STATS    = "stats"
+ACTION_SUMMARY  = "summary"
 
 # =====================================
 # DESCO API
@@ -55,6 +58,85 @@ def desco_get(endpoint: str, account_no: str) -> dict | None:
     return result.get("data")
 
 # =====================================
+# TARIFF CALCULATOR (DESCO LT-A slabs)
+# =====================================
+
+LTA_SLABS = [
+    (50,  3.75),
+    (75,  5.14),
+    (200, 5.72),
+    (300, 6.01),
+    (400, 6.30),
+    (float("inf"), 10.70),
+]
+
+def estimate_bill(units: float) -> float:
+    """Estimate DESCO LT-A bill from units consumed (approx, excl. demand charge)."""
+    charge = 0.0
+    prev = 0
+    for limit, rate in LTA_SLABS:
+        if units <= 0:
+            break
+        slab_units = min(units, limit - prev)
+        charge += slab_units * rate
+        units -= slab_units
+        prev = limit
+    return round(charge, 2)
+
+# =====================================
+# DERIVED STATS HELPER
+# =====================================
+
+def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
+    today          = date.today()
+    reading_str    = balance_data.get("readingTime", str(today))
+    try:
+        reading_date = date.fromisoformat(reading_str)
+    except ValueError:
+        reading_date = today
+
+    days_elapsed   = max(today.day, 1)          # days into this month
+    month_days     = 30                          # approx month length
+    days_left      = max(month_days - days_elapsed, 0)
+
+    usage          = float(balance_data.get("currentMonthConsumption", 0))
+    bal            = float(balance_data.get("balance", 0))
+
+    daily_avg      = round(usage / days_elapsed, 2) if days_elapsed else 0
+    projected_mo   = round(daily_avg * month_days, 2)
+    est_bill       = estimate_bill(projected_mo)
+    days_bal_lasts = round(bal / (daily_avg * 8), 1) if daily_avg > 0 else "∞"  # ≈৳8/unit avg
+
+    conn_age = None
+    load_pct = None
+    if info_data:
+        inst_str = info_data.get("installationDate")
+        if inst_str:
+            try:
+                inst = date.fromisoformat(inst_str)
+                delta = today - inst
+                years  = delta.days // 365
+                months = (delta.days % 365) // 30
+                conn_age = f"{years}y {months}m" if years else f"{months} months"
+            except ValueError:
+                pass
+        load_kw = info_data.get("sanctionLoad", 0)
+        if load_kw:
+            load_pct = round((daily_avg / 24) / load_kw * 100, 1)  # kWh→kW avg
+
+    return {
+        "today":          today,
+        "days_elapsed":   days_elapsed,
+        "days_left":      days_left,
+        "daily_avg":      daily_avg,
+        "projected_mo":   projected_mo,
+        "est_bill":       est_bill,
+        "days_bal_lasts": days_bal_lasts,
+        "conn_age":       conn_age,
+        "load_pct":       load_pct,
+    }
+
+# =====================================
 # KEYBOARDS
 # =====================================
 
@@ -63,6 +145,10 @@ def main_keyboard():
         [
             InlineKeyboardButton("⚡ Balance",       callback_data="balance"),
             InlineKeyboardButton("👤 Customer Info", callback_data="info"),
+        ],
+        [
+            InlineKeyboardButton("📊 Stats",   callback_data="stats"),
+            InlineKeyboardButton("📋 Summary", callback_data="summary"),
         ],
         [InlineKeyboardButton("❓ Help", callback_data="help")],
     ])
@@ -195,6 +281,113 @@ async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# =====================================
+# COMMANDS — STATS
+# =====================================
+
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    send = update.message.reply_text
+    result = await ask_for_account(send, ACTION_STATS, context)
+    if result:
+        await fetch_and_send_stats(send, result, context)
+    else:
+        return ASK_ACCOUNT
+    return ConversationHandler.END
+
+
+async def fetch_and_send_stats(send_fn, account_no: str, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["account_no"] = account_no
+    await send_fn("⏳ Calculating stats...")
+    try:
+        bal_data  = desco_get("getBalance",      account_no)
+        info_data = desco_get("getCustomerInfo", account_no)
+        if not bal_data:
+            await send_fn("❌ No data found.", reply_markup=back_keyboard())
+            return
+
+        s = calc_stats(bal_data, info_data)
+        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s["load_pct"] is not None else ""
+        conn_line = f"🏗 Connection Age: `{s['conn_age']}`\n" if s["conn_age"] else ""
+
+        await send_fn(
+            f"📊 *Usage Statistics*\n\n"
+            f"🔑 Account: `{account_no}`\n"
+            f"📅 Days into month: `{s['days_elapsed']}`\n"
+            f"📆 Days remaining: `{s['days_left']}`\n\n"
+            f"⚡ *Consumption*\n"
+            f"📈 This month so far: `{bal_data.get('currentMonthConsumption', 0):.2f} Unit`\n"
+            f"📉 Daily average: `{s['daily_avg']} Unit/day`\n"
+            f"🔮 Projected this month: `{s['projected_mo']} Unit`\n\n"
+            f"💰 *Balance*\n"
+            f"💵 Current: *৳{bal_data.get('balance', 0)}*\n"
+            f"🕐 Est. days balance lasts: `{s['days_bal_lasts']} days`\n\n"
+            f"🧾 *Bill Estimate \(LT-A\)*\n"
+            f"💳 Approx bill: *~৳{s['est_bill']}*\n"
+            f"_\(Based on projected {s['projected_mo']} units, excl\. demand charge\)_\n\n"
+            f"{load_line}{conn_line}",
+            parse_mode="MarkdownV2",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
+# =====================================
+# COMMANDS — SUMMARY
+# =====================================
+
+async def summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    send = update.message.reply_text
+    result = await ask_for_account(send, ACTION_SUMMARY, context)
+    if result:
+        await fetch_and_send_summary(send, result, context)
+    else:
+        return ASK_ACCOUNT
+    return ConversationHandler.END
+
+
+async def fetch_and_send_summary(send_fn, account_no: str, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["account_no"] = account_no
+    await send_fn("⏳ Fetching full summary...")
+    try:
+        bal_data  = desco_get("getBalance",      account_no)
+        info_data = desco_get("getCustomerInfo", account_no)
+        if not bal_data or not info_data:
+            await send_fn("❌ No data found.", reply_markup=back_keyboard())
+            return
+
+        s    = calc_stats(bal_data, info_data)
+        name = info_data.get("customerName", "N/A")
+        addr = info_data.get("installationAddress", "N/A")
+        tariff = info_data.get("tariffSolution", "N/A")
+        phase  = info_data.get("phaseType", "N/A")
+        load   = info_data.get("sanctionLoad", "N/A")
+        meter  = info_data.get("meterNo", "N/A")
+        feeder = info_data.get("feederName", "N/A")
+        conn_line = f"🏗 Connection age: `{s['conn_age']}`\n" if s["conn_age"] else ""
+
+        await send_fn(
+            f"📋 *Full Account Summary*\n\n"
+            f"👤 *{name}*\n"
+            f"🔑 Account: `{account_no}`\n"
+            f"📍 {addr}\n\n"
+            f"💰 *Balance & Usage*\n"
+            f"💵 Balance: *৳{bal_data.get('balance', 0)}*\n"
+            f"📈 This month: `{bal_data.get('currentMonthConsumption', 0):.2f} Unit`\n"
+            f"📉 Daily avg: `{s['daily_avg']} Unit/day`\n"
+            f"🔮 Projected: `{s['projected_mo']} Unit`\n"
+            f"💳 Est\. bill: *~৳{s['est_bill']}*\n"
+            f"🕐 Balance lasts ~`{s['days_bal_lasts']} days`\n\n"
+            f"🔌 *Meter & Connection*\n"
+            f"🔌 Meter: `{meter}` \| {phase} \| `{load} kW`\n"
+            f"🌐 Feeder: `{feeder}`\n"
+            f"📋 Tariff: `{tariff}`\n"
+            f"{conn_line}",
+            parse_mode="MarkdownV2",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
 async def fetch_and_send_info(send_fn, account_no: str, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching customer info...")
@@ -264,6 +457,10 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await fetch_and_send_balance(send, account_no, context)
     elif action == ACTION_INFO:
         await fetch_and_send_info(send, account_no, context)
+    elif action == ACTION_STATS:
+        await fetch_and_send_stats(send, account_no, context)
+    elif action == ACTION_SUMMARY:
+        await fetch_and_send_summary(send, account_no, context)
 
     context.user_data.pop("pending_action", None)
     return ConversationHandler.END
@@ -314,6 +511,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["pending_action"] = ACTION_BALANCE
             return ASK_ACCOUNT
 
+    elif data == "stats":
+        account_no = context.user_data.get("account_no")
+        if account_no:
+            await fetch_and_send_stats(send, account_no, context)
+        else:
+            await send("🔢 Enter your *DESCO account number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_STATS
+            return ASK_ACCOUNT
+
+    elif data == "summary":
+        account_no = context.user_data.get("account_no")
+        if account_no:
+            await fetch_and_send_summary(send, account_no, context)
+        else:
+            await send("🔢 Enter your *DESCO account number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_SUMMARY
+            return ASK_ACCOUNT
+
     elif data == "info":
         account_no = context.user_data.get("account_no")
         if account_no:
@@ -335,6 +550,8 @@ async def setup_commands(app):
         BotCommand("start",   "🏠 Main menu"),
         BotCommand("balance", "⚡ Check prepaid balance"),
         BotCommand("info",    "👤 Customer & meter info"),
+        BotCommand("stats",   "📊 Usage stats & bill estimate"),
+        BotCommand("summary", "📋 Full account summary"),
         BotCommand("forget",  "🗑 Clear saved account number"),
         BotCommand("help",    "❓ Help & instructions"),
         BotCommand("cancel",  "❌ Cancel current action"),
@@ -357,7 +574,9 @@ def main():
         entry_points=[
             CommandHandler("balance",  balance_cmd),
             CommandHandler("info",     info_cmd),
-            CallbackQueryHandler(button_handler, pattern="^(balance|info)$"),
+            CommandHandler("stats",    stats_cmd),
+            CommandHandler("summary",  summary_cmd),
+            CallbackQueryHandler(button_handler, pattern="^(balance|info|stats|summary)$"),
         ],
         states={
             ASK_ACCOUNT: [
@@ -373,6 +592,7 @@ def main():
     app.add_handler(CommandHandler("help",   help_command))
     app.add_handler(CommandHandler("forget", forget_command))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(stats|summary)$"))
     app.add_handler(conv)
 
     app.post_init = setup_commands
