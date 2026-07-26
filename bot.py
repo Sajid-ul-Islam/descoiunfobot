@@ -54,8 +54,9 @@ ACTION_SUMMARY  = "summary"
 def desco_get(endpoint: str, account_no: str) -> dict | None:
     url = f"{BASE_URL}/{endpoint}?accountNo={account_no}"
     response = requests.get(url, timeout=15, verify=False)
+    print(f"[DESCO] {endpoint} | status={response.status_code} | body={response.text[:300]}")
     result = response.json()
-    return result.get("data")
+    return result.get("data"), result  # returns (data, full_result)
 
 # =====================================
 # TARIFF CALCULATOR (DESCO LT-A slabs)
@@ -240,10 +241,12 @@ async def fetch_and_send_balance(send_fn, account_no: str, context: ContextTypes
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching balance...")
     try:
-        data = desco_get("getBalance", account_no)
+        data, raw = desco_get("getBalance", account_no)
         if not data:
             await send_fn(
-                "❌ *No data found* for that account number.",
+                f"❌ *No data found.*\n\n"
+                f"API response: `{raw}`\n\n"
+                f"Check your account number and try again.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
@@ -299,10 +302,14 @@ async def fetch_and_send_stats(send_fn, account_no: str, context: ContextTypes.D
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Calculating stats...")
     try:
-        bal_data  = desco_get("getBalance",      account_no)
-        info_data = desco_get("getCustomerInfo", account_no)
+        bal_data, bal_raw   = desco_get("getBalance",      account_no)
+        info_data, info_raw = desco_get("getCustomerInfo", account_no)
         if not bal_data:
-            await send_fn("❌ No data found.", reply_markup=back_keyboard())
+            await send_fn(
+                f"❌ No balance data.\nAPI: `{bal_raw}`",
+                parse_mode="Markdown",
+                reply_markup=back_keyboard(),
+            )
             return
 
         s = calc_stats(bal_data, info_data)
@@ -321,11 +328,11 @@ async def fetch_and_send_stats(send_fn, account_no: str, context: ContextTypes.D
             f"💰 *Balance*\n"
             f"💵 Current: *৳{bal_data.get('balance', 0)}*\n"
             f"🕐 Est. days balance lasts: `{s['days_bal_lasts']} days`\n\n"
-            f"🧾 *Bill Estimate \(LT-A\)*\n"
+            f"🧾 *Bill Estimate (LT-A)*\n"
             f"💳 Approx bill: *~৳{s['est_bill']}*\n"
-            f"_\(Based on projected {s['projected_mo']} units, excl\. demand charge\)_\n\n"
+            f"_(Based on projected {s['projected_mo']} units, excl. demand charge)_\n\n"
             f"{load_line}{conn_line}",
-            parse_mode="MarkdownV2",
+            parse_mode="Markdown",
             reply_markup=main_keyboard(),
         )
     except Exception as e:
@@ -349,10 +356,14 @@ async def fetch_and_send_summary(send_fn, account_no: str, context: ContextTypes
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching full summary...")
     try:
-        bal_data  = desco_get("getBalance",      account_no)
-        info_data = desco_get("getCustomerInfo", account_no)
+        bal_data, bal_raw   = desco_get("getBalance",      account_no)
+        info_data, info_raw = desco_get("getCustomerInfo", account_no)
         if not bal_data or not info_data:
-            await send_fn("❌ No data found.", reply_markup=back_keyboard())
+            await send_fn(
+                f"❌ No data.\nBalance API: `{bal_raw}`\nInfo API: `{info_raw}`",
+                parse_mode="Markdown",
+                reply_markup=back_keyboard(),
+            )
             return
 
         s    = calc_stats(bal_data, info_data)
@@ -375,14 +386,14 @@ async def fetch_and_send_summary(send_fn, account_no: str, context: ContextTypes
             f"📈 This month: `{bal_data.get('currentMonthConsumption', 0):.2f} Unit`\n"
             f"📉 Daily avg: `{s['daily_avg']} Unit/day`\n"
             f"🔮 Projected: `{s['projected_mo']} Unit`\n"
-            f"💳 Est\. bill: *~৳{s['est_bill']}*\n"
+            f"💳 Est. bill: *~৳{s['est_bill']}*\n"
             f"🕐 Balance lasts ~`{s['days_bal_lasts']} days`\n\n"
             f"🔌 *Meter & Connection*\n"
-            f"🔌 Meter: `{meter}` \| {phase} \| `{load} kW`\n"
+            f"🔌 Meter: `{meter}` | {phase} | `{load} kW`\n"
             f"🌐 Feeder: `{feeder}`\n"
             f"📋 Tariff: `{tariff}`\n"
             f"{conn_line}",
-            parse_mode="MarkdownV2",
+            parse_mode="Markdown",
             reply_markup=main_keyboard(),
         )
     except Exception as e:
@@ -392,10 +403,10 @@ async def fetch_and_send_info(send_fn, account_no: str, context: ContextTypes.DE
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching customer info...")
     try:
-        data = desco_get("getCustomerInfo", account_no)
+        data, raw = desco_get("getCustomerInfo", account_no)
         if not data:
             await send_fn(
-                "❌ *No data found* for that account number.",
+                f"❌ *No data found.*\n\nAPI response: `{raw}`\n\nCheck your account number.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
