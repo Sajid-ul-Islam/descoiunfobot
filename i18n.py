@@ -11,6 +11,7 @@ MESSAGES = {
         "daily_btn": "📆 Daily Usage",
         "monthly_btn": "📅 Monthly Usage",
         "recharge_btn": "💳 Recharge History",
+        "export_btn": "📥 Export CSV Report",
         "postpaid_btn": "📄 Postpaid Bill Info",
         "palli_btn": "🌾 Palli Bidyut (BREB)",
         "bpdb_btn": "🏢 BPDB (Chattogram)",
@@ -40,6 +41,7 @@ MESSAGES = {
         "fetching_monthly": "⏳ Fetching monthly consumption...",
         "fetching_recharge": "⏳ Fetching recharge history...",
         "fetching_chart": "⏳ Generating visual analytics dashboard...",
+        "exporting": "⏳ Generating Excel CSV report...",
     },
     "bn": {
         "welcome": "👋 *ডেসকো ইনফো বোট-এ স্বাগতম!*{saved}\n\nএকটি অপশন নির্বাচন করুন:",
@@ -51,6 +53,7 @@ MESSAGES = {
         "daily_btn": "📆 দৈনিক ব্যবহার",
         "monthly_btn": "📅 মাসিক ব্যবহার",
         "recharge_btn": "💳 রিচার্জ ইতিহাস",
+        "export_btn": "📥 এক্সেল রিপোর্ট ডাউনলোড",
         "postpaid_btn": "📄 পোস্টপেইড তথ্য",
         "palli_btn": "🌾 পল্লী বিদ্যুৎ (বিআরইবি)",
         "bpdb_btn": "🏢 বিপিডিবি (চট্টগ্রাম)",
@@ -80,6 +83,7 @@ MESSAGES = {
         "fetching_monthly": "⏳ মাসিক ব্যবহারের ইতিহাস আনা হচ্ছে...",
         "fetching_recharge": "⏳ রিচার্জের ইতিহাস আনা হচ্ছে...",
         "fetching_chart": "⏳ গ্রাফিকাল ড্যাশবোর্ড তৈরি করা হচ্ছে...",
+        "exporting": "⏳ এক্সেল রিপোর্ট তৈরি করা হচ্ছে...",
     }
 }
 

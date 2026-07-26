@@ -28,6 +28,8 @@ from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_all_coverage_text
 from providers_adapter import provider_get
+from tariff_tips import get_tariff_tip, get_low_balance_warning
+from report_gen import generate_csv_report
 
 # =====================================
 # CONFIG
@@ -57,6 +59,7 @@ ACTION_RECHARGE = "recharge"
 ACTION_MONTHLY  = "monthly"
 ACTION_DAILY    = "daily"
 ACTION_CHART    = "chart"
+ACTION_EXPORT   = "export"
 
 # =====================================
 # DESCO API
@@ -194,11 +197,12 @@ def main_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
+            InlineKeyboardButton(get_msg(lang, "export_btn"),   callback_data="export"),
             InlineKeyboardButton(get_msg(lang, "other_btn"),    callback_data="other_menu"),
-            InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
         ],
         [
-            InlineKeyboardButton(get_msg(lang, "help_btn"), callback_data="help"),
+            InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
+            InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
         ],
     ])
 
@@ -561,15 +565,21 @@ async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context)
                    if code == 200 else f"❌ *{desc}*")
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
+        bal_val = float(data.get('balance', 0))
+        mo_use  = float(data.get('currentMonthConsumption', 0))
+        lang    = get_lang(None, context)
+        warn_banner = get_low_balance_warning(bal_val, daily_avg=mo_use/30, lang=lang)
+
         await send_fn(
             f"⚡ *Balance Info*\n\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
-            f"💰 Balance: *৳{data.get('balance', 0)}*\n"
-            f"📊 This Month: `{float(data.get('currentMonthConsumption', 0)):.2f} Unit`\n"
+            f"💰 Balance: *৳{bal_val:.2f}*\n"
+            f"📊 This Month: `{mo_use:.2f} Unit`\n"
             f"🔌 Meter: `{data.get('meterNo', 'N/A')}`\n"
-            f"🕒 Last Reading: `{data.get('readingTime', 'N/A')}`",
+            f"🕒 Last Reading: `{data.get('readingTime', 'N/A')}`"
+            f"{warn_banner}",
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(lang),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -631,6 +641,10 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
         s = calc_stats(bal_data, info_data)
         load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s["load_pct"] is not None else ""
         conn_line = f"🏗 Connection Age: `{s['conn_age']}`\n"  if s["conn_age"]            else ""
+        
+        lang = get_lang(None, context)
+        tariff_tip = get_tariff_tip(float(bal_data.get('currentMonthConsumption', 0)), lang=lang)
+        
         await send_fn(
             f"📊 *Usage Statistics*\n\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
@@ -880,16 +894,39 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
         lang = get_lang(update, context) if update else "en"
         buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang)
 
-        # 4. Send photo
-        if msg_target:
-            await msg_target.reply_photo(
-                photo=buf,
-                caption=f"📈 *DESCO Analytics Dashboard*\n🔑 Account: `{account_no}` _{system}_",
+async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    lang = get_lang(None, context)
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
+    await send_fn(get_msg(lang, "exporting"))
+    try:
+        today = date.today()
+        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+        month_to   = today.strftime("%Y-%m")
+        monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
+
+        date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
+        date_to   = today.strftime("%Y-%m-%d")
+        recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+        csv_buf = generate_csv_report(monthly_data or [], recharge_data or [], account_no, system)
+        filename = f"DESCO_Report_{account_no}_{today.strftime('%Y%m%d')}.csv"
+
+        if hasattr(send_fn, "__self__") and hasattr(send_fn.__self__, "reply_document"):
+            await send_fn.__self__.reply_document(
+                document=csv_buf,
+                filename=filename,
+                caption=f"📥 *Utility Consumption & Recharge Report*\n🔑 Account: `{account_no}` _{system}_",
                 parse_mode="Markdown",
-                reply_markup=main_keyboard(),
+                reply_markup=main_keyboard(lang),
             )
         else:
-            await send_fn("📈 Chart generated.", reply_markup=main_keyboard())
+            await send_fn("📥 Report generated.", reply_markup=main_keyboard(lang))
+    except Exception as e:
+        await send_fn(f"❌ Error exporting report: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
     except Exception as e:
         await send_fn(f"❌ Error generating chart: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -912,6 +949,7 @@ async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
         ACTION_RECHARGE: fetch_and_send_recharge,
         ACTION_MONTHLY:  fetch_and_send_monthly,
         ACTION_DAILY:    fetch_and_send_daily,
+        ACTION_EXPORT:   fetch_and_send_export,
         ACTION_CHART:    lambda send_fn, acc, sys, met, ctx: fetch_and_send_chart(send_fn, acc, sys, met, ctx, update=update),
     }
     await dispatch[action](send, account_no, system, meter_no, context)
@@ -925,6 +963,7 @@ async def recharge_cmd(u, c): return await _cmd(ACTION_RECHARGE, u, c)
 async def monthly_cmd(u, c):  return await _cmd(ACTION_MONTHLY,  u, c)
 async def daily_cmd(u, c):    return await _cmd(ACTION_DAILY,    u, c)
 async def chart_cmd(u, c):    return await _cmd(ACTION_CHART,    u, c)
+async def export_cmd(u, c):   return await _cmd(ACTION_EXPORT,   u, c)
 
 # =====================================
 # INLINE BUTTON HANDLER
@@ -1126,6 +1165,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "recharge": (ACTION_RECHARGE, fetch_and_send_recharge),
         "monthly":  (ACTION_MONTHLY,  fetch_and_send_monthly),
         "daily":    (ACTION_DAILY,    fetch_and_send_daily),
+        "export":   (ACTION_EXPORT,   fetch_and_send_export),
         "chart":    (ACTION_CHART,    lambda send, acc, sys, met, ctx: fetch_and_send_chart(send, acc, sys, met, ctx, update=update)),
     }
     if data in ACTION_MAP:
@@ -1187,6 +1227,7 @@ async def setup_commands(app):
         BotCommand("daily",    "📆 Daily usage & cost breakdown"),
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
+        BotCommand("export",   "📥 Download Excel CSV report"),
         BotCommand("provider", "⚡ Select electricity provider"),
         BotCommand("other",    "🌐 Other providers & services"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
@@ -1240,6 +1281,7 @@ def main():
         ("monthly",  monthly_cmd),
         ("daily",    daily_cmd),
         ("chart",    chart_cmd),
+        ("export",   export_cmd),
     ]
     ALL_ACTIONS = "|".join(a for a, _ in CMDS)
 
