@@ -237,7 +237,7 @@ def generate_usage_chart(
     bal_data: dict | None = None,
     info_data: dict | None = None,
     lang: str = "en",
-    days: int = 15
+    days: int = 7
 ) -> io.BytesIO:
     """
     Generates a 4-tier Executive Dashboard featuring KPI cards + Glowing Area Line Chart + Gradient Bar Chart.
@@ -249,13 +249,13 @@ def generate_usage_chart(
     daily_avg    = round(mo_use / days_elapsed, 1) if days_elapsed else 0
     projected_mo = round(daily_avg * 30, 1)
 
-    t_bal   = "💰 Current Balance" if lang == "en" else "💰 বর্তমান ব্যালেন্স"
-    t_mo    = "⚡ Month Consumption" if lang == "en" else "⚡ চলতি মাসের ব্যবহার"
-    t_avg   = "📉 Daily Average" if lang == "en" else "📉 দৈনিক গড় ব্যবহার"
-    t_proj  = "🔮 Projected Usage" if lang == "en" else "🔮 আনুমানিক মাসিক ব্যবহার"
-    t_daily = f"⚡ Daily Consumption & Cost Line Trend (Past {days} Days)" if lang == "en" else f"⚡ দৈনিক ব্যবহার ও খরচের লাইন গ্রাফ (গত {days} দিন)"
-    t_mo_tr = "📅 12-Month Consumption & Bill Trend" if lang == "en" else "📅 ১২ মাসের ব্যবহার ও বিলের গ্রাফ"
-    t_title = f"📊 DESCO Executive Dashboard — Account: {account_no} ({system})" if lang == "en" else f"📊 ডেসকো এক্সিকিউটিভ ড্যাশবোর্ড — অ্যাকাউন্ট: {account_no} ({system})"
+    t_bal   = "Current Balance" if lang == "en" else "বর্তমান ব্যালেন্স"
+    t_mo    = "Month Consumption" if lang == "en" else "চলতি মাসের ব্যবহার"
+    t_avg   = "Daily Average" if lang == "en" else "দৈনিক গড় ব্যবহার"
+    t_proj  = "Projected Usage" if lang == "en" else "আনুমানিক মাসিক ব্যবহার"
+    t_daily = f"Daily Consumption & Cost Line Trend (Past {days} Days)" if lang == "en" else f"দৈনিক ব্যবহার ও খরচের লাইন গ্রাফ (গত {days} দিন)"
+    t_mo_tr = "12-Month Consumption & Bill Trend" if lang == "en" else "১২ মাসের ব্যবহার ও বিলের গ্রাফ"
+    t_title = f"DESCO Executive Dashboard — Account: {account_no} ({system})" if lang == "en" else f"ডেসকো এক্সিকিউটিভ ড্যাশবোর্ড — অ্যাকাউন্ট: {account_no} ({system})"
 
     fig = make_subplots(
         rows=4, cols=2,

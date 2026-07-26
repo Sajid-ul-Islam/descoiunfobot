@@ -931,7 +931,7 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
 
-async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None, days: int = 15):
+async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None, days: int = 7):
     msg_target = update.effective_message if update else None
     if msg_target:
         await msg_target.reply_text(f"⏳ Generating visual analytics chart ({days} Days)...")
