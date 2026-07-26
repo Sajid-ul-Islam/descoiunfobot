@@ -201,8 +201,8 @@ def main_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
-            InlineKeyboardButton("🌾 Palli Bidyut (BREB)", callback_data="palli_info"),
-            InlineKeyboardButton("🏢 BPDB (Chattogram)",   callback_data="bpdb_info"),
+            InlineKeyboardButton(get_msg(lang, "palli_btn"), callback_data="palli_info"),
+            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),  callback_data="bpdb_info"),
         ],
         [
             InlineKeyboardButton(get_msg(lang, "postpaid_btn"), callback_data="postpaid_info"),
