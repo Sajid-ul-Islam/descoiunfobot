@@ -180,7 +180,8 @@ async def ask_for_account(send_fn, action: str, context: ContextTypes.DEFAULT_TY
         return saved
     await send_fn(
         f"🔢 Enter your *DESCO account number*:\n\n"
-        f"_Tip: found on your bill or meter card._",
+        f"_Found on your electricity bill or prepaid meter card._\n"
+        f"_Example: `41032243`_",
         parse_mode="Markdown",
     )
     context.user_data["pending_action"] = action
@@ -243,10 +244,11 @@ async def fetch_and_send_balance(send_fn, account_no: str, context: ContextTypes
     try:
         data, raw = desco_get("getBalance", account_no)
         if not data:
+            desc = raw.get('desc', 'Unknown error')
             await send_fn(
-                f"❌ *No data found.*\n\n"
-                f"API response: `{raw}`\n\n"
-                f"Check your account number and try again.",
+                f"❌ *{desc}*\n\n"
+                f"Please double-check your account number\n"
+                f"and try /balance again.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
@@ -305,8 +307,10 @@ async def fetch_and_send_stats(send_fn, account_no: str, context: ContextTypes.D
         bal_data, bal_raw   = desco_get("getBalance",      account_no)
         info_data, info_raw = desco_get("getCustomerInfo", account_no)
         if not bal_data:
+            desc = bal_raw.get('desc', 'Unknown error')
             await send_fn(
-                f"❌ No balance data.\nAPI: `{bal_raw}`",
+                f"❌ *{desc}*\n\n"
+                f"Please double-check your account number.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
@@ -359,8 +363,10 @@ async def fetch_and_send_summary(send_fn, account_no: str, context: ContextTypes
         bal_data, bal_raw   = desco_get("getBalance",      account_no)
         info_data, info_raw = desco_get("getCustomerInfo", account_no)
         if not bal_data or not info_data:
+            desc = bal_raw.get('desc') or info_raw.get('desc', 'Unknown error')
             await send_fn(
-                f"❌ No data.\nBalance API: `{bal_raw}`\nInfo API: `{info_raw}`",
+                f"❌ *{desc}*\n\n"
+                f"Please double-check your account number.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
@@ -405,8 +411,10 @@ async def fetch_and_send_info(send_fn, account_no: str, context: ContextTypes.DE
     try:
         data, raw = desco_get("getCustomerInfo", account_no)
         if not data:
+            desc = raw.get('desc', 'Unknown error')
             await send_fn(
-                f"❌ *No data found.*\n\nAPI response: `{raw}`\n\nCheck your account number.",
+                f"❌ *{desc}*\n\n"
+                f"Please double-check your account number.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
             )
