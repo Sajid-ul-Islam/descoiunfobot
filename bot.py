@@ -22,6 +22,8 @@ from telegram.ext import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+from db import init_db, track_user, get_admin_stats
+
 # =====================================
 # CONFIG
 # =====================================
@@ -31,6 +33,7 @@ load_dotenv()
 BOT_TOKEN   = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT        = int(os.getenv("PORT", 10000))
+ADMIN_ID    = int(os.getenv("ADMIN_ID", 0))
 
 BASE_API = "https://prepaid.desco.org.bd/api"
 SYSTEMS  = ["unified", "tkdes"]
@@ -216,12 +219,14 @@ async def resolve_account(update, context, action):
 # =====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/start")
     account_no = context.user_data.get("account_no")
     system     = context.user_data.get("system")
     await send_main_menu(update.message.reply_text, account_no, system)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/help")
     await update.message.reply_text(
         "📖 *DESCO Info Bot — Help*\n\n"
         "*Commands:*\n"
@@ -229,7 +234,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /balance — Prepaid balance\n"
         "• /info — Customer & meter details\n"
         "• /stats — Usage stats & bill estimate\n"
-        "• /summary — Full account summary\n"
+        "• /summary — Full summary\n"
+        "• /daily — Daily usage & cost breakdown\n"
         "• /recharge — Last 12 months recharge history\n"
         "• /monthly — Monthly consumption history\n"
         "• /forget — Clear saved account\n"
@@ -277,6 +283,8 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["account_no"] = account_no
     context.user_data["system"]     = system
     context.user_data["meter_no"]   = meter_no
+
+    track_user(update.effective_user, "account_submit", account_no)
 
     await send(
         f"✅ Found on *{system}* system\n"
@@ -572,6 +580,7 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
 async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     send = update.message.reply_text
     account_no, system, meter_no = await resolve_account(update, context, action)
+    track_user(update.effective_user, f"/{action}", account_no or "")
     if not account_no:
         return ASK_ACCOUNT
     dispatch = {
@@ -639,12 +648,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_no = context.user_data.get("account_no")
         system     = context.user_data.get("system")
         meter_no   = context.user_data.get("meter_no", "")
+        track_user(update.effective_user, f"btn_{action}", account_no or "")
         if account_no and system:
             await fetch_fn(send, account_no, system, meter_no, context)
         else:
             await send("🔢 Enter your *DESCO account number*:", parse_mode="Markdown")
             context.user_data["pending_action"] = action
             return ASK_ACCOUNT
+
+# =====================================
+# ADMIN COMMAND
+# =====================================
+
+async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if ADMIN_ID and user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ Unauthorized: Admin access only.")
+        return
+
+    track_user(update.effective_user, "/admin")
+    stats = get_admin_stats()
+
+    users_list = []
+    for u in stats["recent_users"]:
+        name = u["first_name"] or u["username"] or str(u["user_id"])
+        users_list.append(f"• `{u['user_id']}` ({name}) — {u['request_count']} reqs")
+
+    recent_str = "\n".join(users_list) if users_list else "None"
+
+    await update.message.reply_text(
+        f"📊 *DESCO Bot Usage Statistics*\n\n"
+        f"👥 *Total Unique Users:* `{stats['total_users']}`\n"
+        f"🔥 *Active Today:* `{stats['active_today']}`\n"
+        f"📆 *Active Past 7 Days:* `{stats['active_week']}`\n"
+        f"⚡ *Total Requests Processed:* `{stats['total_requests']}`\n\n"
+        f"👤 *Recent Active Users:*\n{recent_str}",
+        parse_mode="Markdown"
+    )
 
 # =====================================
 # REGISTER BOT COMMANDS
@@ -670,6 +710,7 @@ async def setup_commands(app):
 # =====================================
 
 def main():
+    init_db()
     app = Application.builder().token(BOT_TOKEN).build()
 
     CMDS = [
@@ -699,6 +740,7 @@ def main():
     app.add_handler(CommandHandler("start",  start))
     app.add_handler(CommandHandler("help",   help_command))
     app.add_handler(CommandHandler("forget", forget_command))
+    app.add_handler(CommandHandler("admin",  admin_cmd))
     app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
