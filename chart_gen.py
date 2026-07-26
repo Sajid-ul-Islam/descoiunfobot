@@ -401,6 +401,8 @@ def generate_usage_chart(
             row=4, col=1, secondary_y=True
         )
 
+    fig.update_annotations(font=dict(family=FONT_FAMILY, color="#cdd6f4"))
+
     fig.update_layout(
         title=dict(
             text=t_title,
