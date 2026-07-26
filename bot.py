@@ -47,6 +47,7 @@ ACTION_STATS    = "stats"
 ACTION_SUMMARY  = "summary"
 ACTION_RECHARGE = "recharge"
 ACTION_MONTHLY  = "monthly"
+ACTION_DAILY    = "daily"
 
 # =====================================
 # DESCO API
@@ -167,8 +168,11 @@ def main_keyboard():
             InlineKeyboardButton("📋 Summary",        callback_data="summary"),
         ],
         [
+            InlineKeyboardButton("📆 Daily Usage",     callback_data="daily"),
+            InlineKeyboardButton("📅 Monthly Usage",   callback_data="monthly"),
+        ],
+        [
             InlineKeyboardButton("💳 Recharge History", callback_data="recharge"),
-            InlineKeyboardButton("📅 Monthly Usage",    callback_data="monthly"),
         ],
         [InlineKeyboardButton("❓ Help", callback_data="help")],
     ])
@@ -479,7 +483,6 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         records = data if isinstance(data, list) else [data]
-        # Sort by month descending
         records = sorted(records, key=lambda x: str(x.get("month", "")), reverse=True)
         lines   = []
         for r in records[:12]:
@@ -492,6 +495,70 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
             f"📊 *Monthly Consumption* (last 12 months)\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             + "\n".join(lines),
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
+
+async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
+    await send_fn("⏳ Fetching daily usage & cost breakdown...")
+    try:
+        today = date.today()
+        # Fetch current month (from 1st of month to today)
+        date_from = today.replace(day=1).strftime("%Y-%m-%d")
+        date_to   = today.strftime("%Y-%m-%d")
+        data, code, desc = desco_get(
+            system, "getCustomerDailyConsumption", account_no, meter_no,
+            dateFrom=date_from, dateTo=date_to,
+        )
+        if not data or len(data) < 2:
+            # Fallback to last 30 days
+            date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            data, code, desc = desco_get(
+                system, "getCustomerDailyConsumption", account_no, meter_no,
+                dateFrom=date_from, dateTo=date_to,
+            )
+
+        if not data:
+            msg = ("⚠️ No daily consumption history found." if code == 200 else f"❌ *{desc}*")
+            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
+            return
+
+        records = data if isinstance(data, list) else [data]
+        records = sorted(records, key=lambda x: str(x.get("date", "")))
+
+        lines = []
+        for i in range(1, len(records)):
+            prev_rec = records[i-1]
+            curr_rec = records[i]
+            d_str    = curr_rec.get("date", "N/A")
+
+            u_curr  = float(curr_rec.get("consumedUnit") or 0)
+            u_prev  = float(prev_rec.get("consumedUnit") or 0)
+            u_delta = max(u_curr - u_prev, 0)
+
+            t_curr  = float(curr_rec.get("consumedTaka") or 0)
+            t_prev  = float(prev_rec.get("consumedTaka") or 0)
+            t_delta = max(t_curr - t_prev, 0)
+
+            rate = (t_delta / u_delta) if u_delta > 0 else 0
+
+            lines.append(
+                f"📆 `{d_str}` — `{u_delta:.2f} Unit` | *৳{t_delta:.2f}* `(@৳{rate:.2f}/u)`"
+            )
+
+        if not lines and records:
+            r = records[0]
+            lines.append(f"📆 `{r.get('date')}` — `{float(r.get('consumedUnit',0)):.2f} Unit` | *৳{float(r.get('consumedTaka',0)):.2f}*")
+
+        lines.reverse()
+
+        await send_fn(
+            f"📆 *Daily Usage & Cost Breakdown*\n"
+            f"🔑 Account: `{account_no}` _{system}_\n\n"
+            + "\n".join(lines[:25]),
             parse_mode="Markdown",
             reply_markup=main_keyboard(),
         )
@@ -514,6 +581,7 @@ async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
         ACTION_SUMMARY:  fetch_and_send_summary,
         ACTION_RECHARGE: fetch_and_send_recharge,
         ACTION_MONTHLY:  fetch_and_send_monthly,
+        ACTION_DAILY:    fetch_and_send_daily,
     }
     await dispatch[action](send, account_no, system, meter_no, context)
     return ConversationHandler.END
@@ -524,6 +592,7 @@ async def stats_cmd(u, c):    return await _cmd(ACTION_STATS,    u, c)
 async def summary_cmd(u, c):  return await _cmd(ACTION_SUMMARY,  u, c)
 async def recharge_cmd(u, c): return await _cmd(ACTION_RECHARGE, u, c)
 async def monthly_cmd(u, c):  return await _cmd(ACTION_MONTHLY,  u, c)
+async def daily_cmd(u, c):    return await _cmd(ACTION_DAILY,    u, c)
 
 # =====================================
 # INLINE BUTTON HANDLER
@@ -563,6 +632,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "summary":  (ACTION_SUMMARY,  fetch_and_send_summary),
         "recharge": (ACTION_RECHARGE, fetch_and_send_recharge),
         "monthly":  (ACTION_MONTHLY,  fetch_and_send_monthly),
+        "daily":    (ACTION_DAILY,    fetch_and_send_daily),
     }
     if data in ACTION_MAP:
         action, fetch_fn = ACTION_MAP[data]
@@ -587,8 +657,9 @@ async def setup_commands(app):
         BotCommand("info",    "👤 Customer & meter info"),
         BotCommand("stats",   "📊 Usage stats & bill estimate"),
         BotCommand("summary", "📋 Full account summary"),
-        BotCommand("recharge","💳 Recharge history (12 months)"),
+        BotCommand("daily",   "📆 Daily usage & cost breakdown"),
         BotCommand("monthly", "📅 Monthly consumption history"),
+        BotCommand("recharge","💳 Recharge history (12 months)"),
         BotCommand("forget",  "🗑 Clear saved account"),
         BotCommand("help",    "❓ Help"),
         BotCommand("cancel",  "❌ Cancel"),
@@ -608,6 +679,7 @@ def main():
         ("summary",  summary_cmd),
         ("recharge", recharge_cmd),
         ("monthly",  monthly_cmd),
+        ("daily",    daily_cmd),
     ]
     ALL_ACTIONS = "|".join(a for a, _ in CMDS)
 
