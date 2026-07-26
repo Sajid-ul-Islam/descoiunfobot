@@ -51,12 +51,16 @@ ACTION_SUMMARY  = "summary"
 # DESCO API
 # =====================================
 
-def desco_get(endpoint: str, account_no: str) -> dict | None:
+def desco_get(endpoint: str, account_no: str) -> tuple:
+    """Returns (data, code, desc, raw)."""
     url = f"{BASE_URL}/{endpoint}?accountNo={account_no}"
     response = requests.get(url, timeout=15, verify=False)
     print(f"[DESCO] {endpoint} | status={response.status_code} | body={response.text[:300]}")
-    result = response.json()
-    return result.get("data"), result  # returns (data, full_result)
+    raw  = response.json()
+    data = raw.get("data")
+    code = raw.get("code", 0)
+    desc = raw.get("desc", "Unknown error")
+    return data, code, desc, raw
 
 # =====================================
 # TARIFF CALCULATOR (DESCO LT-A slabs)
@@ -241,16 +245,19 @@ async def fetch_and_send_balance(send_fn, account_no: str, context: ContextTypes
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching balance...")
     try:
-        data, raw = desco_get("getBalance", account_no)
+        data, code, desc, _ = desco_get("getBalance", account_no)
         if not data:
-            desc = raw.get('desc', 'Unknown error')
-            await send_fn(
-                f"❌ *{desc}*\n\n"
-                f"Please double-check your account number\n"
-                f"and try /balance again.",
-                parse_mode="Markdown",
-                reply_markup=back_keyboard(),
-            )
+            if code == 200:
+                msg = (
+                    "⚠️ *Account found but no data available.*\n\n"
+                    "This account may be newly registered or inactive."
+                )
+            else:
+                msg = (
+                    f"❌ *{desc}*\n\n"
+                    "Please double-check your account number."
+                )
+            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
 
         balance  = data.get("balance", 0)
@@ -303,16 +310,14 @@ async def fetch_and_send_stats(send_fn, account_no: str, context: ContextTypes.D
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Calculating stats...")
     try:
-        bal_data, bal_raw   = desco_get("getBalance",      account_no)
-        info_data, info_raw = desco_get("getCustomerInfo", account_no)
+        bal_data, bal_code, bal_desc, _ = desco_get("getBalance",      account_no)
+        info_data, _, _, _               = desco_get("getCustomerInfo", account_no)
         if not bal_data:
-            desc = bal_raw.get('desc', 'Unknown error')
-            await send_fn(
-                f"❌ *{desc}*\n\n"
-                f"Please double-check your account number.",
-                parse_mode="Markdown",
-                reply_markup=back_keyboard(),
-            )
+            if bal_code == 200:
+                msg = "⚠️ *Account found but no data available yet.*"
+            else:
+                msg = f"❌ *{bal_desc}*\n\nPlease double-check your account number."
+            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
 
         s = calc_stats(bal_data, info_data)
@@ -359,16 +364,14 @@ async def fetch_and_send_summary(send_fn, account_no: str, context: ContextTypes
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching full summary...")
     try:
-        bal_data, bal_raw   = desco_get("getBalance",      account_no)
-        info_data, info_raw = desco_get("getCustomerInfo", account_no)
+        bal_data, bal_code, bal_desc, _ = desco_get("getBalance",      account_no)
+        info_data, info_code, info_desc, _ = desco_get("getCustomerInfo", account_no)
         if not bal_data or not info_data:
-            desc = bal_raw.get('desc') or info_raw.get('desc', 'Unknown error')
-            await send_fn(
-                f"❌ *{desc}*\n\n"
-                f"Please double-check your account number.",
-                parse_mode="Markdown",
-                reply_markup=back_keyboard(),
-            )
+            if bal_code == 200 or info_code == 200:
+                msg = "⚠️ *Account found but no data available yet.*"
+            else:
+                msg = f"❌ *{bal_desc or info_desc}*\n\nPlease double-check your account number."
+            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
 
         s    = calc_stats(bal_data, info_data)
@@ -408,15 +411,19 @@ async def fetch_and_send_info(send_fn, account_no: str, context: ContextTypes.DE
     context.user_data["account_no"] = account_no
     await send_fn("⏳ Fetching customer info...")
     try:
-        data, raw = desco_get("getCustomerInfo", account_no)
+        data, code, desc, _ = desco_get("getCustomerInfo", account_no)
         if not data:
-            desc = raw.get('desc', 'Unknown error')
-            await send_fn(
-                f"❌ *{desc}*\n\n"
-                f"Please double-check your account number.",
-                parse_mode="Markdown",
-                reply_markup=back_keyboard(),
-            )
+            if code == 200:
+                msg = (
+                    "⚠️ *Account found but no customer info available.*\n\n"
+                    "This account may be newly registered or inactive."
+                )
+            else:
+                msg = (
+                    f"❌ *{desc}*\n\n"
+                    "Please double-check your account number."
+                )
+            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
 
         name     = data.get("customerName", "N/A")
