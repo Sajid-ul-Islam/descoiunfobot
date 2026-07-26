@@ -548,7 +548,8 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_ACCOUNT
 
     await send("🔍 Detecting account...")
-    system, account_no, meter_no, info_data, status = detect_system(user_input)
+    prov = context.user_data.get("provider", "desco")
+    system, account_no, meter_no, info_data, status = detect_system(user_input, provider=prov)
 
     if status == "EMPTY_PREPAID":
         context.user_data["account_no"] = user_input
@@ -1168,6 +1169,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prov_code = data.replace("set_prov_", "")
         set_user_provider(update.effective_user.id, prov_code)
         context.user_data["provider"] = prov_code
+        context.user_data.pop("account_no", None)
         lang = get_lang(update, context)
         prov_names = {
             "desco": "DESCO (Dhaka North)",
@@ -1179,11 +1181,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         name = prov_names.get(prov_code, prov_code.upper())
         await send(
-            get_msg(lang, "provider_saved", name=name),
+            get_msg(lang, "provider_prompt", name=name),
             parse_mode="Markdown",
-            reply_markup=main_keyboard(lang),
         )
-        return
+        return ASK_ACCOUNT
 
     if data == "postpaid_info":
         await send(
