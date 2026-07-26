@@ -22,8 +22,9 @@ from telegram.ext import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from db import init_db, track_user, get_admin_stats
+from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
+from i18n import get_msg
 
 # =====================================
 # CONFIG
@@ -179,70 +180,84 @@ def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
 # KEYBOARDS
 # =====================================
 
-def main_keyboard():
+def main_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⚡ Balance",        callback_data="balance"),
-            InlineKeyboardButton("👤 Customer Info",  callback_data="info"),
+            InlineKeyboardButton(get_msg(lang, "balance_btn"), callback_data="balance"),
+            InlineKeyboardButton(get_msg(lang, "info_btn"),    callback_data="info"),
         ],
         [
-            InlineKeyboardButton("📊 Stats",          callback_data="stats"),
-            InlineKeyboardButton("📈 Dashboard",      callback_data="chart"),
+            InlineKeyboardButton(get_msg(lang, "stats_btn"),   callback_data="stats"),
+            InlineKeyboardButton(get_msg(lang, "chart_btn"),   callback_data="chart"),
         ],
         [
-            InlineKeyboardButton("📋 Summary",        callback_data="summary"),
-            InlineKeyboardButton("📆 Daily Usage",     callback_data="daily"),
+            InlineKeyboardButton(get_msg(lang, "summary_btn"), callback_data="summary"),
+            InlineKeyboardButton(get_msg(lang, "daily_btn"),   callback_data="daily"),
         ],
         [
-            InlineKeyboardButton("📅 Monthly Usage",   callback_data="monthly"),
-            InlineKeyboardButton("💳 Recharge History", callback_data="recharge"),
+            InlineKeyboardButton(get_msg(lang, "monthly_btn"),  callback_data="monthly"),
+            InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
-            InlineKeyboardButton("📄 Postpaid Bill Info", callback_data="postpaid_info"),
+            InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
+            InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
         ],
-        [InlineKeyboardButton("❓ Help", callback_data="help")],
     ])
 
-def back_keyboard():
+def back_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="start")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
-def daily_keyboard():
+def daily_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📈 View Daily Chart", callback_data="chart_daily")],
-        [InlineKeyboardButton("🏠 Main Menu",        callback_data="start")],
+        [InlineKeyboardButton(get_msg(lang, "view_daily_chart"), callback_data="chart_daily")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),    callback_data="start")],
     ])
 
-def monthly_keyboard():
+def monthly_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📈 View Monthly Chart", callback_data="chart_monthly")],
-        [InlineKeyboardButton("🏠 Main Menu",          callback_data="start")],
+        [InlineKeyboardButton(get_msg(lang, "view_monthly_chart"), callback_data="chart_monthly")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),      callback_data="start")],
     ])
 
-def recharge_keyboard():
+def recharge_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📈 View Recharge Chart", callback_data="chart_recharge")],
-        [InlineKeyboardButton("🏠 Main Menu",           callback_data="start")],
+        [InlineKeyboardButton(get_msg(lang, "view_recharge_chart"), callback_data="chart_recharge")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),       callback_data="start")],
     ])
 
-def postpaid_keyboard():
+def postpaid_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📄 DESCO E-Bill Portal", url="https://ebill.desco.org.bd/")],
         [InlineKeyboardButton("🌐 DESCO OCSMS Portal", url="https://ocsms.desco.org.bd/")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="start")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
-# =====================================
-# HELPERS
-# =====================================
+def settings_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
+            InlineKeyboardButton("🇧🇩 বাংলা",  callback_data="set_lang_bn"),
+        ],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
 
-async def send_main_menu(send_fn, account_no=None, system=None):
+def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    lang = context.user_data.get("language")
+    if not lang:
+        user_id = update.effective_user.id if update and update.effective_user else 0
+        lang = get_user_language(user_id) if user_id else "en"
+        context.user_data["language"] = lang
+    return lang
+
+async def send_main_menu(send_fn, account_no=None, system=None, lang: str = "en"):
     saved = f"\n\n💾 Account: `{account_no}` _{system}_" if account_no else ""
+    msg_text = get_msg(lang, "welcome", saved=saved)
     await send_fn(
-        f"👋 *Welcome to DESCO Info Bot!*{saved}\n\nChoose an option:",
+        msg_text,
         parse_mode="Markdown",
-        reply_markup=main_keyboard(),
+        reply_markup=main_keyboard(lang),
     )
 
 
@@ -268,9 +283,21 @@ async def resolve_account(update, context, action):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update.effective_user, "/start")
+    lang = get_lang(update, context)
     account_no = context.user_data.get("account_no")
     system     = context.user_data.get("system")
-    await send_main_menu(update.message.reply_text, account_no, system)
+    await send_main_menu(update.message.reply_text, account_no, system, lang)
+
+
+async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/settings")
+    lang = get_lang(update, context)
+    msg_text = get_msg(lang, "settings_title")
+    await update.message.reply_text(
+        msg_text,
+        parse_mode="Markdown",
+        reply_markup=settings_keyboard(lang),
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -694,7 +721,8 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
         bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no)
 
         # 4. Render executive chart
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data)
+        lang = get_lang(update, context) if update else "en"
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang)
 
         # 4. Send photo
         if msg_target:
@@ -752,10 +780,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     send = query.message.reply_text
     data = query.data
 
-    if data == "start":
-        account_no = context.user_data.get("account_no")
-        system     = context.user_data.get("system")
-        await send_main_menu(send, account_no, system)
+    if data == "settings":
+        lang = get_lang(update, context)
+        await send(
+            get_msg(lang, "settings_title"),
+            parse_mode="Markdown",
+            reply_markup=settings_keyboard(lang),
+        )
+        return
+
+    if data == "set_lang_en":
+        set_user_language(update.effective_user.id, "en")
+        context.user_data["language"] = "en"
+        await send(get_msg("en", "lang_saved"), parse_mode="Markdown", reply_markup=main_keyboard("en"))
+        return
+
+    if data == "set_lang_bn":
+        set_user_language(update.effective_user.id, "bn")
+        context.user_data["language"] = "bn"
+        await send(get_msg("bn", "lang_saved"), parse_mode="Markdown", reply_markup=main_keyboard("bn"))
         return
 
     if data == "help":
@@ -898,19 +941,20 @@ async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setup_commands(app):
     # Public command menu for normal users (NO /admin)
     await app.bot.set_my_commands([
-        BotCommand("start",   "🏠 Main menu"),
-        BotCommand("balance", "⚡ Prepaid balance"),
-        BotCommand("info",    "👤 Customer & meter info"),
-        BotCommand("stats",   "📊 Usage stats & bill estimate"),
-        BotCommand("chart",   "📈 Visual analytics chart"),
-        BotCommand("summary", "📋 Full account summary"),
-        BotCommand("daily",   "📆 Daily usage & cost breakdown"),
-        BotCommand("monthly", "📅 Monthly consumption history"),
-        BotCommand("recharge","💳 Recharge history (12 months)"),
-        BotCommand("postpaid","📄 Postpaid bill guidance & links"),
-        BotCommand("forget",  "🗑 Clear saved account"),
-        BotCommand("help",    "❓ Help"),
-        BotCommand("cancel",  "❌ Cancel"),
+        BotCommand("start",    "🏠 Main menu"),
+        BotCommand("balance",  "⚡ Prepaid balance"),
+        BotCommand("info",     "👤 Customer & meter info"),
+        BotCommand("stats",    "📊 Usage stats & bill estimate"),
+        BotCommand("chart",    "📈 Visual analytics chart"),
+        BotCommand("summary",  "📋 Full account summary"),
+        BotCommand("daily",    "📆 Daily usage & cost breakdown"),
+        BotCommand("monthly",  "📅 Monthly consumption history"),
+        BotCommand("recharge", "💳 Recharge history (12 months)"),
+        BotCommand("settings", "⚙️ Language & bot settings"),
+        BotCommand("postpaid", "📄 Postpaid bill guidance & links"),
+        BotCommand("forget",   "🗑 Clear saved account"),
+        BotCommand("help",     "❓ Help"),
+        BotCommand("cancel",   "❌ Cancel"),
     ])
 
     # Admin-only command menu (shows /admin only to ADMIN_ID)
@@ -972,9 +1016,10 @@ def main():
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     help_command))
     app.add_handler(CommandHandler("forget",   forget_command))
+    app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("postpaid", postpaid_command if 'postpaid_command' in locals() else postpaid_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 

@@ -21,9 +21,15 @@ def init_db():
                 first_seen TIMESTAMP,
                 last_seen TIMESTAMP,
                 request_count INTEGER DEFAULT 1,
-                last_account_no TEXT
+                last_account_no TEXT,
+                language TEXT DEFAULT 'en'
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'en'")
+        except Exception:
+            pass
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS activity_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +55,6 @@ def track_user(user, command: str = "", account_no: str = ""):
         row = cursor.fetchone()
 
         if row:
-            # Update existing user
             acc_update = ", last_account_no = ?" if account_no else ""
             params = [username, first_name, last_name, now]
             if account_no:
@@ -62,13 +67,11 @@ def track_user(user, command: str = "", account_no: str = ""):
                 WHERE user_id = ?
             """, params)
         else:
-            # Insert new user
             cursor.execute("""
-                INSERT INTO users (user_id, username, first_name, last_name, first_seen, last_seen, request_count, last_account_no)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                INSERT INTO users (user_id, username, first_name, last_name, first_seen, last_seen, request_count, last_account_no, language)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 'en')
             """, (user_id, username, first_name, last_name, now, now, account_no))
 
-        # Log activity
         if command:
             cursor.execute("""
                 INSERT INTO activity_log (user_id, command, timestamp)
@@ -76,6 +79,19 @@ def track_user(user, command: str = "", account_no: str = ""):
             """, (user_id, command, now))
 
         conn.commit()
+
+def set_user_language(user_id: int, lang: str):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, user_id))
+        conn.commit()
+
+def get_user_language(user_id: int) -> str:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        return row["language"] if row and row["language"] else "en"
 
 def get_admin_stats() -> dict:
     now = datetime.now()

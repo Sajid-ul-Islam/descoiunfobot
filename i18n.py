@@ -1,0 +1,75 @@
+# Localization dictionary for English (en) and Bangla (bn)
+
+MESSAGES = {
+    "en": {
+        "welcome": "👋 *Welcome to DESCO Info Bot!*{saved}\n\nChoose an option:",
+        "balance_btn": "⚡ Balance",
+        "info_btn": "👤 Customer Info",
+        "stats_btn": "📊 Stats",
+        "chart_btn": "📈 Dashboard",
+        "summary_btn": "📋 Summary",
+        "daily_btn": "📆 Daily Usage",
+        "monthly_btn": "📅 Monthly Usage",
+        "recharge_btn": "💳 Recharge History",
+        "postpaid_btn": "📄 Postpaid Bill Info",
+        "settings_btn": "⚙️ Settings",
+        "help_btn": "❓ Help",
+        "main_menu_btn": "🏠 Main Menu",
+        "view_daily_chart": "📈 View Daily Chart",
+        "view_monthly_chart": "📈 View Monthly Chart",
+        "view_recharge_chart": "📈 View Recharge Chart",
+        "ask_account": "🔢 Enter your *account number* or *meter number*:\n\n_Both are printed on your electricity bill or meter card._",
+        "detecting": "🔍 Detecting account...",
+        "found_system": "✅ Found on *{system}* system\n🔑 Account: `{account_no}`\n🔌 Meter: `{meter_no}`",
+        "not_found": "❌ *Not found on DESCO servers.*\n\nPlease double-check your account number or meter number.",
+        "settings_title": "⚙️ *Bot Settings*\n\nCurrent Language: *English 🇬🇧*\n\nSelect your preferred language:",
+        "lang_saved": "✅ Language set to *English 🇬🇧*",
+        "fetching_bal": "⏳ Fetching balance...",
+        "fetching_info": "⏳ Fetching customer info...",
+        "fetching_stats": "⏳ Calculating stats...",
+        "fetching_summary": "⏳ Fetching full summary...",
+        "fetching_daily": "⏳ Fetching daily usage & cost breakdown...",
+        "fetching_monthly": "⏳ Fetching monthly consumption...",
+        "fetching_recharge": "⏳ Fetching recharge history...",
+        "fetching_chart": "⏳ Generating visual analytics dashboard...",
+    },
+    "bn": {
+        "welcome": "👋 *ডেসকো ইনফো বোট-এ স্বাগতম!*{saved}\n\nএকটি অপশন নির্বাচন করুন:",
+        "balance_btn": "⚡ ব্যালেন্স",
+        "info_btn": "👤 গ্রাহক তথ্য",
+        "stats_btn": "📊 পরিসংখ্যান",
+        "chart_btn": "📈 ড্যাশবোর্ড",
+        "summary_btn": "📋 সারাংশ",
+        "daily_btn": "📆 দৈনিক ব্যবহার",
+        "monthly_btn": "📅 মাসিক ব্যবহার",
+        "recharge_btn": "💳 রিচার্জ ইতিহাস",
+        "postpaid_btn": "📄 পোস্টপেইড তথ্য",
+        "settings_btn": "⚙️ সেটিংস",
+        "help_btn": "❓ সহায়তা",
+        "main_menu_btn": "🏠 প্রধান মেনু",
+        "view_daily_chart": "📈 দৈনিক চার্ট দেখুন",
+        "view_monthly_chart": "📈 মাসিক চার্ট দেখুন",
+        "view_recharge_chart": "📈 রিচার্জ চার্ট দেখুন",
+        "ask_account": "🔢 আপনার *অ্যাকাউন্ট নম্বর* অথবা *মিটার নম্বর* লিখুন:\n\n_এটি আপনার বিদ্যুৎ বিল বা মিটার কার্ডে পাবেন।_",
+        "detecting": "🔍 অ্যাকাউন্ট যাচাই করা হচ্ছে...",
+        "found_system": "✅ *{system}* সিস্টেমে অ্যাকাউন্ট পাওয়া গেছে\n🔑 অ্যাকাউন্ট: `{account_no}`\n🔌 মিটার: `{meter_no}`",
+        "not_found": "❌ *ডেসকো সার্ভারে পাওয়া যায়নি।*\n\nঅনুগ্রহ করে অ্যাকাউন্ট নম্বরটি পুনরায় পরীক্ষা করুন।",
+        "settings_title": "⚙️ *বোট সেটিংস*\n\nবর্তমান ভাষা: *বাংলা 🇧🇩*\n\nআপনার পছন্দের ভাষা নির্বাচন করুন:",
+        "lang_saved": "✅ ভাষা নির্ধারণ করা হয়েছে *বাংলা 🇧🇩*",
+        "fetching_bal": "⏳ ব্যালেন্স তথ্য আনা হচ্ছে...",
+        "fetching_info": "⏳ গ্রাহকের তথ্য আনা হচ্ছে...",
+        "fetching_stats": "⏳ ব্যবহারের পরিসংখ্যান হিসাব করা হচ্ছে...",
+        "fetching_summary": "⏳ সম্পূর্ণ সারাংশ তৈরি করা হচ্ছে...",
+        "fetching_daily": "⏳ দৈনিক ব্যবহারের হিসাব আনা হচ্ছে...",
+        "fetching_monthly": "⏳ মাসিক ব্যবহারের ইতিহাস আনা হচ্ছে...",
+        "fetching_recharge": "⏳ রিচার্জের ইতিহাস আনা হচ্ছে...",
+        "fetching_chart": "⏳ গ্রাফিকাল ড্যাশবোর্ড তৈরি করা হচ্ছে...",
+    }
+}
+
+def get_msg(lang: str, key: str, **kwargs) -> str:
+    lang_dict = MESSAGES.get(lang, MESSAGES["en"])
+    text = lang_dict.get(key, MESSAGES["en"].get(key, key))
+    if kwargs:
+        return text.format(**kwargs)
+    return text
