@@ -417,6 +417,16 @@ async def provider_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/token")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_token_help_text(lang),
+        parse_mode="Markdown",
+        reply_markup=back_keyboard(lang),
+    )
+
+
 async def other_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update.effective_user, "/other")
     lang = get_lang(update, context)
