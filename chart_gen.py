@@ -4,12 +4,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.io as pio
 
-# Use dark theme & Bengali compatible font family
+# Dark theme & Bengali compatible font family
 pio.templates.default = "plotly_dark"
 FONT_FAMILY = "Noto Sans Bengali, Kalpurush, SolaimanLipi, Vrinda, Arial, sans-serif"
 
 def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
-    """Generates a Plotly PNG chart for daily consumption & cost."""
+    """Generates a smooth glowing Area + Line chart for daily consumption & cost."""
     if not daily_data or len(daily_data) < 2:
         return None
 
@@ -36,27 +36,33 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # 1. Glowing Semi-Transparent Spline Area for Units
     fig.add_trace(
-        go.Bar(
+        go.Scatter(
             x=dates,
             y=units,
             name="Units (kWh)" if lang == "en" else "ইউনিট (kWh)",
-            marker_color="#89b4fa",
+            mode="lines+markers",
+            line=dict(color="#89b4fa", width=3, shape="spline"),
+            fill="tozeroy",
+            fillcolor="rgba(137, 180, 250, 0.20)",
+            marker=dict(size=7, color="#89b4fa", symbol="circle"),
             text=[f"{u:.1f}" for u in units],
-            textposition="outside",
+            textposition="top center",
             textfont=dict(color="#cdd6f4", size=9, family=FONT_FAMILY),
         ),
         secondary_y=False,
     )
 
+    # 2. Glowing Cost Spline Line
     fig.add_trace(
         go.Scatter(
             x=dates,
             y=taka,
             name="Cost (৳)" if lang == "en" else "খরচ (৳)",
             mode="lines+markers",
-            line=dict(color="#fab387", width=3),
-            marker=dict(size=7, color="#fab387"),
+            line=dict(color="#fab387", width=3, shape="spline", dash="solid"),
+            marker=dict(size=7, color="#fab387", symbol="diamond"),
         ),
         secondary_y=True,
     )
@@ -90,7 +96,7 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
 
 
 def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
-    """Generates a Plotly PNG chart for 12-month historical consumption & cost."""
+    """Generates a Plotly PNG chart with gradient intensity bars + bill spline curve."""
     if not monthly_data:
         return None
 
@@ -101,12 +107,18 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
+    # 1. Gradient-colored units bars
     fig.add_trace(
         go.Bar(
             x=months,
             y=mo_units,
             name="Monthly Units (kWh)" if lang == "en" else "মাসিক ইউনিট (kWh)",
-            marker_color="#a6e3a1",
+            marker=dict(
+                color=mo_units,
+                colorscale="Tealgrn",
+                showscale=False,
+                line=dict(color="#a6e3a1", width=1.5),
+            ),
             text=[f"{u:.0f}" for u in mo_units],
             textposition="outside",
             textfont=dict(color="#a6e3a1", size=10, family=FONT_FAMILY),
@@ -114,14 +126,15 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
         secondary_y=False,
     )
 
+    # 2. Glowing bill amount spline line
     fig.add_trace(
         go.Scatter(
             x=months,
             y=mo_taka,
             name="Bill Amount (৳)" if lang == "en" else "বিল (৳)",
             mode="lines+markers",
-            line=dict(color="#f9e2af", width=3),
-            marker=dict(size=8, color="#f9e2af"),
+            line=dict(color="#f9e2af", width=3.5, shape="spline"),
+            marker=dict(size=9, color="#f9e2af", symbol="hexagon"),
         ),
         secondary_y=True,
     )
@@ -178,7 +191,12 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
             x=dates,
             y=amts,
             name="Recharge Amount (৳)" if lang == "en" else "রিচার্জের টাকা (৳)",
-            marker_color="#a6e3a1",
+            marker=dict(
+                color=amts,
+                colorscale="Viridis",
+                showscale=False,
+                line=dict(color="#a6e3a1", width=1),
+            ),
             text=[f"৳{int(a)}" for a in amts],
             textposition="outside",
             textfont=dict(color="#a6e3a1", size=9, family=FONT_FAMILY),
@@ -221,7 +239,7 @@ def generate_usage_chart(
     lang: str = "en"
 ) -> io.BytesIO:
     """
-    Generates a 4-tier Plotly Executive Dashboard with 4 top-row KPI Cards + Daily Trend + Monthly History.
+    Generates a 4-tier Executive Dashboard featuring KPI cards + Glowing Area Chart + Gradient Bar Chart.
     """
     bal_val = float((bal_data or {}).get("balance", 0))
     mo_use  = float((bal_data or {}).get("currentMonthConsumption", 0))
@@ -234,7 +252,7 @@ def generate_usage_chart(
     t_mo    = "⚡ Month Consumption" if lang == "en" else "⚡ চলতি মাসের ব্যবহার"
     t_avg   = "📉 Daily Average" if lang == "en" else "📉 দৈনিক গড় ব্যবহার"
     t_proj  = "🔮 Projected Usage" if lang == "en" else "🔮 আনুমানিক মাসিক ব্যবহার"
-    t_daily = "⚡ Daily Consumption & Cost Trend (Past 15 Days)" if lang == "en" else "⚡ দৈনিক ব্যবহার ও খরচের গ্রাফ (গত ১৫ দিন)"
+    t_daily = "⚡ Daily Consumption & Cost Area Trend (Past 15 Days)" if lang == "en" else "⚡ দৈনিক ব্যবহার ও খরচের এরিয়া গ্রাফ (গত ১৫ দিন)"
     t_mo_tr = "📅 12-Month Consumption & Bill Trend" if lang == "en" else "📅 ১২ মাসের ব্যবহার ও বিলের গ্রাফ"
     t_title = f"📊 DESCO Executive Dashboard — Account: {account_no} ({system})" if lang == "en" else f"📊 ডেসকো এক্সিকিউটিভ ড্যাশবোর্ড — অ্যাকাউন্ট: {account_no} ({system})"
 
@@ -299,7 +317,7 @@ def generate_usage_chart(
         row=2, col=2
     )
 
-    # --- Row 3: Daily Subplot ---
+    # --- Row 3: Daily Area Subplot ---
     if daily_data and len(daily_data) >= 2:
         sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
         dates, units, taka = [], [], []
@@ -320,15 +338,34 @@ def generate_usage_chart(
         taka  = taka[-15:]
 
         fig.add_trace(
-            go.Bar(x=dates, y=units, name="Daily Units" if lang == "en" else "দৈনিক ইউনিট", marker_color="#89b4fa", text=[f"{u:.1f}" for u in units], textposition="outside", textfont=dict(size=8, family=FONT_FAMILY)),
+            go.Scatter(
+                x=dates,
+                y=units,
+                name="Daily Units" if lang == "en" else "দৈনিক ইউনিট",
+                mode="lines+markers",
+                line=dict(color="#89b4fa", width=2.5, shape="spline"),
+                fill="tozeroy",
+                fillcolor="rgba(137, 180, 250, 0.18)",
+                marker=dict(size=6, color="#89b4fa"),
+                text=[f"{u:.1f}" for u in units],
+                textposition="top center",
+                textfont=dict(size=8, family=FONT_FAMILY),
+            ),
             row=3, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=dates, y=taka, name="Daily Cost (৳)" if lang == "en" else "দৈনিক খরচ (৳)", mode="lines+markers", line=dict(color="#fab387", width=2.5), marker=dict(size=6)),
+            go.Scatter(
+                x=dates,
+                y=taka,
+                name="Daily Cost (৳)" if lang == "en" else "দৈনিক খরচ (৳)",
+                mode="lines+markers",
+                line=dict(color="#fab387", width=2.5, shape="spline"),
+                marker=dict(size=6, color="#fab387"),
+            ),
             row=3, col=1, secondary_y=True
         )
 
-    # --- Row 4: Monthly Subplot ---
+    # --- Row 4: Monthly Gradient Bar Subplot ---
     if monthly_data:
         sorted_mo = sorted(monthly_data, key=lambda x: str(x.get("month", "")))[-12:]
         months   = [m.get("month", "")[-5:] for m in sorted_mo]
@@ -336,11 +373,31 @@ def generate_usage_chart(
         mo_taka  = [float(m.get("consumedTaka") or 0) for m in sorted_mo]
 
         fig.add_trace(
-            go.Bar(x=months, y=mo_units, name="Monthly Units" if lang == "en" else "মাসিক ইউনিট", marker_color="#a6e3a1", text=[f"{u:.0f}" for u in mo_units], textposition="outside", textfont=dict(size=8, family=FONT_FAMILY)),
+            go.Bar(
+                x=months,
+                y=mo_units,
+                name="Monthly Units" if lang == "en" else "মাসিক ইউনিট",
+                marker=dict(
+                    color=mo_units,
+                    colorscale="Tealgrn",
+                    showscale=False,
+                    line=dict(color="#a6e3a1", width=1),
+                ),
+                text=[f"{u:.0f}" for u in mo_units],
+                textposition="outside",
+                textfont=dict(size=8, family=FONT_FAMILY),
+            ),
             row=4, col=1, secondary_y=False
         )
         fig.add_trace(
-            go.Scatter(x=months, y=mo_taka, name="Monthly Bill (৳)" if lang == "en" else "মাসিক বিল (৳)", mode="lines+markers", line=dict(color="#f9e2af", width=2.5), marker=dict(size=6)),
+            go.Scatter(
+                x=months,
+                y=mo_taka,
+                name="Monthly Bill (৳)" if lang == "en" else "মাসিক বিল (৳)",
+                mode="lines+markers",
+                line=dict(color="#f9e2af", width=3, shape="spline"),
+                marker=dict(size=7, color="#f9e2af"),
+            ),
             row=4, col=1, secondary_y=True
         )
 
