@@ -27,6 +27,7 @@ from chart_gen import generate_daily_chart, generate_monthly_chart, generate_rec
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_all_coverage_text
+from providers_adapter import provider_get
 
 # =====================================
 # CONFIG
@@ -62,26 +63,14 @@ ACTION_CHART    = "chart"
 # =====================================
 
 def desco_get(system: str, endpoint: str, account_no: str,
-              meter_no: str = "", **params) -> tuple:
-    """Returns (data, code, desc). Raises on network error."""
-    url = (
-        f"{BASE_API}/{system}/customer/{endpoint}"
-        f"?accountNo={account_no}&meterNo={meter_no}"
-    )
-    for k, v in params.items():
-        url += f"&{k}={v}"
-    print(f"[DESCO] GET {url}")
-    r = requests.get(url, timeout=15, verify=False)
-    raw  = r.json()
-    data = raw.get("data")
-    code = raw.get("code", 0)
-    desc = raw.get("desc", "Unknown error")
-    return data, code, desc
+              meter_no: str = "", provider: str = "desco", **params) -> tuple:
+    """Returns (data, code, desc). Standardized for DESCO and BPDB APIs."""
+    return provider_get(provider, system, endpoint, account_no, meter_no, **params)
 
 
-def detect_system(user_input: str) -> tuple:
+def detect_system(user_input: str, provider: str = "desco") -> tuple:
     """
-    Try user_input as accountNo then as meterNo across both systems.
+    Try user_input as accountNo then as meterNo across systems and providers.
     Returns (system, account_no, meter_no, info_data, status)
     status can be: "OK", "EMPTY_PREPAID", "NOT_FOUND"
     """
@@ -90,27 +79,31 @@ def detect_system(user_input: str) -> tuple:
         ("",   user_input),  # treat as meter number
     ]
 
-    found_empty_sys = None
-    for system in SYSTEMS:
-        for acc, met in combos:
-            try:
-                # 1. Try getCustomerInfo
-                data, code, _ = desco_get(system, "getCustomerInfo", acc, met)
-                if data:
-                    account_no = data.get("accountNo") or acc or user_input
-                    meter_no   = data.get("meterNo")   or met or ""
-                    return system, account_no, meter_no, data, "OK"
+    providers_to_check = [provider] + [p for p in ["desco", "bpdb"] if p != provider]
 
-                # 2. Try getBalance if info data was null
-                bal_data, bal_code, _ = desco_get(system, "getBalance", acc, met)
-                if bal_data:
-                    account_no = bal_data.get("accountNo") or acc or user_input
-                    meter_no   = bal_data.get("meterNo")   or met or ""
-                    return system, account_no, meter_no, None, "OK"
-                elif bal_code == 200:
-                    found_empty_sys = system
-            except Exception:
-                pass
+    found_empty_sys = None
+    for prov in providers_to_check:
+        systems = ["unified", "tkdes"] if prov == "desco" else ["unified"]
+        for system in systems:
+            for acc, met in combos:
+                try:
+                    # 1. Try getCustomerInfo
+                    data, code, _ = desco_get(system, "getCustomerInfo", acc, met, provider=prov)
+                    if data:
+                        account_no = data.get("accountNo") or acc or user_input
+                        meter_no   = data.get("meterNo")   or met or ""
+                        return system, account_no, meter_no, data, "OK"
+
+                    # 2. Try getBalance if info data was null
+                    bal_data, bal_code, _ = desco_get(system, "getBalance", acc, met, provider=prov)
+                    if bal_data:
+                        account_no = bal_data.get("accountNo") or acc or user_input
+                        meter_no   = bal_data.get("meterNo")   or met or ""
+                        return system, account_no, meter_no, None, "OK"
+                    elif bal_code == 200:
+                        found_empty_sys = system
+                except Exception:
+                    pass
 
     if found_empty_sys:
         return found_empty_sys, user_input, "", None, "EMPTY_PREPAID"
@@ -523,9 +516,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================
 
 async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching balance...")
     try:
-        data, code, desc = desco_get(system, "getBalance", account_no, meter_no)
+        data, code, desc = desco_get(system, "getBalance", account_no, meter_no, provider=prov)
         if not data:
             msg = ("⚠️ *Account found but no balance data.*"
                    if code == 200 else f"❌ *{desc}*")
@@ -546,9 +545,15 @@ async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context)
 
 
 async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching customer info...")
     try:
-        data, code, desc = desco_get(system, "getCustomerInfo", account_no, meter_no)
+        data, code, desc = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
         if not data:
             msg = ("⚠️ *Account found but no info available.*"
                    if code == 200 else f"❌ *{desc}*")
@@ -578,10 +583,16 @@ async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
 
 
 async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Calculating stats...")
     try:
-        bal_data,  bal_code,  bal_desc  = desco_get(system, "getBalance",      account_no, meter_no)
-        info_data, info_code, info_desc = desco_get(system, "getCustomerInfo", account_no, meter_no)
+        bal_data,  bal_code,  bal_desc  = desco_get(system, "getBalance",      account_no, meter_no, provider=prov)
+        info_data, info_code, info_desc = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
         if not bal_data:
             msg = ("⚠️ No balance data." if bal_code == 200 else f"❌ *{bal_desc}*")
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
@@ -613,10 +624,16 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
 
 
 async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching full summary...")
     try:
-        bal_data,  _, _  = desco_get(system, "getBalance",      account_no, meter_no)
-        info_data, _, _  = desco_get(system, "getCustomerInfo", account_no, meter_no)
+        bal_data,  _, _  = desco_get(system, "getBalance",      account_no, meter_no, provider=prov)
+        info_data, _, _  = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
         if not bal_data or not info_data:
             await send_fn("⚠️ Incomplete data returned.", reply_markup=back_keyboard())
             return
@@ -649,13 +666,19 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
 
 
 async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching recharge history...")
     try:
         today     = date.today()
         date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
         date_to   = today.strftime("%Y-%m-%d")
         data, code, desc = desco_get(
-            system, "getRechargeHistory", account_no, meter_no,
+            system, "getRechargeHistory", account_no, meter_no, provider=prov,
             dateFrom=date_from, dateTo=date_to,
         )
         if not data:
@@ -684,13 +707,19 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
 
 
 async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching monthly consumption...")
     try:
         today      = date.today()
         month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
         month_to   = today.strftime("%Y-%m")
         data, code, desc = desco_get(
-            system, "getCustomerMonthlyConsumption", account_no, meter_no,
+            system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov,
             monthFrom=month_from, monthTo=month_to,
         )
         if not data:
@@ -718,6 +747,12 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
 
 
 async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
+    prov = context.user_data.get("provider", "desco")
+    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+        lang = get_lang(None, context)
+        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        return
+
     await send_fn("⏳ Fetching daily usage & cost breakdown...")
     try:
         today = date.today()
@@ -793,8 +828,9 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
         # 1. Fetch daily data
         date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
         date_to   = today.strftime("%Y-%m-%d")
+        prov = context.user_data.get("provider", "desco")
         daily_data, _, _ = desco_get(
-            system, "getCustomerDailyConsumption", account_no, meter_no,
+            system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov,
             dateFrom=date_from, dateTo=date_to,
         )
 
@@ -802,12 +838,12 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
         month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
         month_to   = today.strftime("%Y-%m")
         monthly_data, _, _ = desco_get(
-            system, "getCustomerMonthlyConsumption", account_no, meter_no,
+            system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov,
             monthFrom=month_from, monthTo=month_to,
         )
 
         # 3. Fetch balance data for KPI card
-        bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no)
+        bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no, provider=prov)
 
         # 4. Render executive chart
         lang = get_lang(update, context) if update else "en"
