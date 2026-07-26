@@ -23,7 +23,7 @@ from telegram.ext import (
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from db import init_db, track_user, get_admin_stats
-from chart_gen import generate_usage_chart
+from chart_gen import generate_daily_chart, generate_monthly_chart, generate_usage_chart
 
 # =====================================
 # CONFIG
@@ -170,7 +170,7 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton("📊 Stats",          callback_data="stats"),
-            InlineKeyboardButton("📈 Visual Chart",   callback_data="chart"),
+            InlineKeyboardButton("📈 Dashboard",      callback_data="chart"),
         ],
         [
             InlineKeyboardButton("📋 Summary",        callback_data="summary"),
@@ -186,6 +186,18 @@ def main_keyboard():
 def back_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏠 Main Menu", callback_data="start")],
+    ])
+
+def daily_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📈 View Daily Chart", callback_data="chart_daily")],
+        [InlineKeyboardButton("🏠 Main Menu",        callback_data="start")],
+    ])
+
+def monthly_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📈 View Monthly Chart", callback_data="chart_monthly")],
+        [InlineKeyboardButton("🏠 Main Menu",          callback_data="start")],
     ])
 
 # =====================================
@@ -508,7 +520,7 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             + "\n".join(lines),
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=monthly_keyboard(),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -572,7 +584,7 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             + "\n".join(lines[:25]),
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=daily_keyboard(),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -674,13 +686,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• /balance — Balance\n"
             "• /info — Customer & meter info\n"
             "• /stats — Usage stats\n"
+            "• /chart — Plotly analytics chart\n"
             "• /summary — Full summary\n"
-            "• /recharge — Recharge history\n"
+            "• /daily — Daily usage breakdown\n"
             "• /monthly — Monthly consumption\n"
+            "• /recharge — Recharge history\n"
             "• /forget — Clear saved account",
             parse_mode="Markdown",
             reply_markup=main_keyboard(),
         )
+        return
+
+    if data == "chart_daily":
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system")
+        meter_no   = context.user_data.get("meter_no", "")
+        if account_no and system:
+            await query.message.reply_text("⏳ Generating daily Plotly chart...")
+            today = date.today()
+            date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            date_to   = today.strftime("%Y-%m-%d")
+            daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, dateFrom=date_from, dateTo=date_to)
+            buf = generate_daily_chart(daily_data or [], account_no, system)
+            if buf:
+                await query.message.reply_photo(photo=buf, caption=f"📆 *Daily Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=daily_keyboard())
+            else:
+                await send("⚠️ Daily chart data unavailable.", reply_markup=back_keyboard())
+        return
+
+    if data == "chart_monthly":
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system")
+        meter_no   = context.user_data.get("meter_no", "")
+        if account_no and system:
+            await query.message.reply_text("⏳ Generating monthly Plotly chart...")
+            today = date.today()
+            month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+            month_to   = today.strftime("%Y-%m")
+            monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, monthFrom=month_from, monthTo=month_to)
+            buf = generate_monthly_chart(monthly_data or [], account_no, system)
+            if buf:
+                await query.message.reply_photo(photo=buf, caption=f"📅 *Monthly Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=monthly_keyboard())
+            else:
+                await send("⚠️ Monthly chart data unavailable.", reply_markup=back_keyboard())
         return
 
     ACTION_MAP = {
