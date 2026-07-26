@@ -25,6 +25,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 from i18n import get_msg
+from palli_bidyut import get_palli_text
 
 # =====================================
 # CONFIG
@@ -199,6 +200,10 @@ def main_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
+            InlineKeyboardButton("🌾 Palli Bidyut (BREB)", callback_data="palli_info"),
+            InlineKeyboardButton(get_msg(lang, "postpaid_btn"), callback_data="postpaid_info"),
+        ],
+        [
             InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
             InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
         ],
@@ -231,6 +236,12 @@ def postpaid_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📄 DESCO E-Bill Portal", url="https://ebill.desco.org.bd/")],
         [InlineKeyboardButton("🌐 DESCO OCSMS Portal", url="https://ocsms.desco.org.bd/")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
+
+def palli_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 BREB Official Portal", url="http://www.reb.gov.bd/")],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
@@ -343,6 +354,16 @@ async def postpaid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         disable_web_page_preview=True,
         reply_markup=postpaid_keyboard(),
+    )
+
+
+async def palli_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/palli")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_palli_text(lang),
+        parse_mode="Markdown",
+        reply_markup=palli_keyboard(lang),
     )
 
 # =====================================
@@ -789,6 +810,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "postpaid_info":
+        await send(
+            "📄 *DESCO Postpaid Electricity Bill Check*\n\n"
+            "Access your postpaid bill through:\n\n"
+            "1️⃣ *DESCO E-Bill Portal:* [ebill.desco.org.bd](https://ebill.desco.org.bd/)\n"
+            "2️⃣ *bKash App:* Pay Bill → Electricity (Postpaid) → DESCO\n"
+            "3️⃣ *Nagad App:* Bill Pay → DESCO Postpaid",
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=postpaid_keyboard(),
+        )
+        return
+
+    if data == "palli_info":
+        lang = get_lang(update, context)
+        await send(
+            get_palli_text(lang),
+            parse_mode="Markdown",
+            reply_markup=palli_keyboard(lang),
+        )
+        return
+
     if data == "set_lang_en":
         set_user_language(update.effective_user.id, "en")
         context.user_data["language"] = "en"
@@ -950,6 +993,7 @@ async def setup_commands(app):
         BotCommand("daily",    "📆 Daily usage & cost breakdown"),
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
+        BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
         BotCommand("settings", "⚙️ Language & bot settings"),
         BotCommand("postpaid", "📄 Postpaid bill guidance & links"),
         BotCommand("forget",   "🗑 Clear saved account"),
@@ -1017,9 +1061,10 @@ def main():
     app.add_handler(CommandHandler("help",     help_command))
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("settings", settings_cmd))
-    app.add_handler(CommandHandler("postpaid", postpaid_command if 'postpaid_command' in locals() else postpaid_cmd))
+    app.add_handler(CommandHandler("postpaid", postpaid_cmd))
+    app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
