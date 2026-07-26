@@ -79,23 +79,40 @@ def desco_get(system: str, endpoint: str, account_no: str,
 def detect_system(user_input: str) -> tuple:
     """
     Try user_input as accountNo then as meterNo across both systems.
-    Returns (system, account_no, meter_no, info_data) or (None, None, None, None).
+    Returns (system, account_no, meter_no, info_data, status)
+    status can be: "OK", "EMPTY_PREPAID", "NOT_FOUND"
     """
     combos = [
         (user_input, ""),   # treat as account number
         ("",   user_input),  # treat as meter number
     ]
+
+    found_empty_sys = None
     for system in SYSTEMS:
         for acc, met in combos:
             try:
+                # 1. Try getCustomerInfo
                 data, code, _ = desco_get(system, "getCustomerInfo", acc, met)
                 if data:
-                    account_no = data.get("accountNo") or acc or ""
+                    account_no = data.get("accountNo") or acc or user_input
                     meter_no   = data.get("meterNo")   or met or ""
-                    return system, account_no, meter_no, data
+                    return system, account_no, meter_no, data, "OK"
+
+                # 2. Try getBalance if info data was null
+                bal_data, bal_code, _ = desco_get(system, "getBalance", acc, met)
+                if bal_data:
+                    account_no = bal_data.get("accountNo") or acc or user_input
+                    meter_no   = bal_data.get("meterNo")   or met or ""
+                    return system, account_no, meter_no, None, "OK"
+                elif bal_code == 200:
+                    found_empty_sys = system
             except Exception:
                 pass
-    return None, None, None, None
+
+    if found_empty_sys:
+        return found_empty_sys, user_input, "", None, "EMPTY_PREPAID"
+
+    return None, None, None, None, "NOT_FOUND"
 
 # =====================================
 # TARIFF CALCULATOR (DESCO LT-A slabs)
@@ -310,17 +327,31 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_ACCOUNT
 
     await send("🔍 Detecting account...")
-    system, account_no, meter_no, info_data = detect_system(user_input)
+    system, account_no, meter_no, info_data, status = detect_system(user_input)
 
-    if not system:
+    if status == "EMPTY_PREPAID":
+        context.user_data["account_no"] = user_input
+        context.user_data["system"]     = system
+        context.user_data["meter_no"]   = ""
+        track_user(update.effective_user, "account_submit_empty", user_input)
+        await send(
+            f"⚠️ *Prepaid Account Recognized (`{system}` system)*\n\n"
+            f"🔑 Account: `{user_input}`\n\n"
+            "This account is registered on DESCO's prepaid system, but DESCO currently has no meter balance or consumption data synced for it yet.\n\n"
+            "_(This typically occurs for newly installed smart meters or accounts undergoing DESCO server sync)._",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(),
+        )
+        return ConversationHandler.END
+
+    if status == "NOT_FOUND" or not system:
         if len(user_input) == 8:
             await send(
-                f"ℹ️ Account `{user_input}` appears to be a *DESCO Postpaid* connection (Monthly Billing).\n\n"
-                "Prepaid smart meter data is not active for this account, but you can check and pay your postpaid bill via:\n\n"
+                f"ℹ️ Account `{user_input}` is not active on Prepaid.\n\n"
+                "If this is a Postpaid connection, check your bill via:\n\n"
                 "📄 *DESCO E-Bill Portal:* [ebill.desco.org.bd](https://ebill.desco.org.bd/)\n"
                 "🌐 *DESCO OCSMS:* [ocsms.desco.org.bd](https://ocsms.desco.org.bd/)\n"
-                "📱 *bKash:* Pay Bill → Electricity (Postpaid) → DESCO\n"
-                "📱 *Nagad:* Bill Pay → DESCO Postpaid",
+                "📱 *bKash:* Pay Bill → Electricity (Postpaid) → DESCO",
                 parse_mode="Markdown",
                 disable_web_page_preview=True,
                 reply_markup=postpaid_keyboard(),
