@@ -26,6 +26,7 @@ from db import init_db, track_user, get_admin_stats, get_user_language, set_user
 from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart
 from i18n import get_msg
 from palli_bidyut import get_palli_text
+from power_bd import get_bpdb_text
 
 # =====================================
 # CONFIG
@@ -201,11 +202,14 @@ def main_keyboard(lang: str = "en"):
         ],
         [
             InlineKeyboardButton("🌾 Palli Bidyut (BREB)", callback_data="palli_info"),
-            InlineKeyboardButton(get_msg(lang, "postpaid_btn"), callback_data="postpaid_info"),
+            InlineKeyboardButton("🏢 BPDB (Chattogram)",   callback_data="bpdb_info"),
         ],
         [
+            InlineKeyboardButton(get_msg(lang, "postpaid_btn"), callback_data="postpaid_info"),
             InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
-            InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "help_btn"), callback_data="help"),
         ],
     ])
 
@@ -242,6 +246,12 @@ def postpaid_keyboard(lang: str = "en"):
 def palli_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🌐 BREB Official Portal", url="http://www.reb.gov.bd/")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
+
+def bpdb_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 BPDB Prepaid Portal", url="https://prepaid.bpdb.gov.bd/")],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
@@ -364,6 +374,17 @@ async def palli_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_palli_text(lang),
         parse_mode="Markdown",
         reply_markup=palli_keyboard(lang),
+    )
+
+
+async def bpdb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/bpdb")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_bpdb_text(lang),
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=bpdb_keyboard(lang),
     )
 
 # =====================================
@@ -832,6 +853,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "bpdb_info":
+        lang = get_lang(update, context)
+        await send(
+            get_bpdb_text(lang),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=bpdb_keyboard(lang),
+        )
+        return
+
     if data == "set_lang_en":
         set_user_language(update.effective_user.id, "en")
         context.user_data["language"] = "en"
@@ -994,6 +1025,7 @@ async def setup_commands(app):
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
+        BotCommand("bpdb",     "🏢 BPDB (Chattogram & Zones) info"),
         BotCommand("settings", "⚙️ Language & bot settings"),
         BotCommand("postpaid", "📄 Postpaid bill guidance & links"),
         BotCommand("forget",   "🗑 Clear saved account"),
@@ -1063,8 +1095,9 @@ def main():
     app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
+    app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info|palli_info|bpdb_info|settings|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
