@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -663,7 +663,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if ADMIN_ID and user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ Unauthorized: Admin access only.")
+        # Completely silent for non-admin users
         return
 
     track_user(update.effective_user, "/admin")
@@ -691,6 +691,7 @@ async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================
 
 async def setup_commands(app):
+    # Public command menu for normal users (NO /admin)
     await app.bot.set_my_commands([
         BotCommand("start",   "🏠 Main menu"),
         BotCommand("balance", "⚡ Prepaid balance"),
@@ -704,6 +705,29 @@ async def setup_commands(app):
         BotCommand("help",    "❓ Help"),
         BotCommand("cancel",  "❌ Cancel"),
     ])
+
+    # Admin-only command menu (shows /admin only to ADMIN_ID)
+    if ADMIN_ID:
+        try:
+            await app.bot.set_my_commands(
+                [
+                    BotCommand("start",   "🏠 Main menu"),
+                    BotCommand("balance", "⚡ Prepaid balance"),
+                    BotCommand("info",    "👤 Customer & meter info"),
+                    BotCommand("stats",   "📊 Usage stats & bill estimate"),
+                    BotCommand("summary", "📋 Full account summary"),
+                    BotCommand("daily",   "📆 Daily usage & cost breakdown"),
+                    BotCommand("monthly", "📅 Monthly consumption history"),
+                    BotCommand("recharge","💳 Recharge history (12 months)"),
+                    BotCommand("admin",   "📊 Admin analytics dashboard"),
+                    BotCommand("forget",  "🗑 Clear saved account"),
+                    BotCommand("help",    "❓ Help"),
+                    BotCommand("cancel",  "❌ Cancel"),
+                ],
+                scope=BotCommandScopeChat(chat_id=ADMIN_ID)
+            )
+        except Exception as e:
+            print("Admin command scope error:", e)
 
 # =====================================
 # MAIN
