@@ -30,6 +30,7 @@ from power_bd import get_bpdb_text, get_all_coverage_text
 from providers_adapter import provider_get
 from tariff_tips import get_tariff_tip, get_low_balance_warning
 from report_gen import generate_csv_report
+from appliance_calc import get_calc_text, get_tariff_guide_text
 
 # =====================================
 # CONFIG
@@ -267,6 +268,10 @@ def settings_keyboard(lang: str = "en"):
 def other_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [
+            InlineKeyboardButton(get_msg(lang, "calc_btn"),   callback_data="calc_info"),
+            InlineKeyboardButton(get_msg(lang, "tariff_btn"), callback_data="tariff_info"),
+        ],
+        [
             InlineKeyboardButton(get_msg(lang, "palli_btn"), callback_data="palli_info"),
             InlineKeyboardButton(get_msg(lang, "bpdb_btn"),  callback_data="bpdb_info"),
         ],
@@ -438,6 +443,26 @@ async def other_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         get_msg(lang, "other_title"),
         parse_mode="Markdown",
         reply_markup=other_keyboard(lang),
+    )
+
+
+async def calc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/calc")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_calc_text(lang),
+        parse_mode="Markdown",
+        reply_markup=back_keyboard(lang),
+    )
+
+
+async def tariff_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/tariff")
+    lang = get_lang(update, context)
+    await update.message.reply_text(
+        get_tariff_guide_text(lang),
+        parse_mode="Markdown",
+        reply_markup=back_keyboard(lang),
     )
 
 
@@ -993,6 +1018,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "calc_info":
+        lang = get_lang(update, context)
+        await send(
+            get_calc_text(lang),
+            parse_mode="Markdown",
+            reply_markup=back_keyboard(lang),
+        )
+        return
+
+    if data == "tariff_info":
+        lang = get_lang(update, context)
+        await send(
+            get_tariff_guide_text(lang),
+            parse_mode="Markdown",
+            reply_markup=back_keyboard(lang),
+        )
+        return
+
     if data.startswith("set_prov_"):
         prov_code = data.replace("set_prov_", "")
         set_user_provider(update.effective_user.id, prov_code)
@@ -1228,6 +1271,8 @@ async def setup_commands(app):
         BotCommand("monthly",  "📅 Monthly consumption history"),
         BotCommand("recharge", "💳 Recharge history (12 months)"),
         BotCommand("export",   "📥 Download Excel CSV report"),
+        BotCommand("calc",     "🧮 Appliance energy calculator"),
+        BotCommand("tariff",   "⚡ Peak vs Off-Peak tariff schedule"),
         BotCommand("provider", "⚡ Select electricity provider"),
         BotCommand("other",    "🌐 Other providers & services"),
         BotCommand("palli",    "🌾 Palli Bidyut (BREB) info & codes"),
@@ -1304,13 +1349,15 @@ def main():
     app.add_handler(CommandHandler("settings", settings_cmd))
     app.add_handler(CommandHandler("provider", provider_cmd))
     app.add_handler(CommandHandler("other",    other_cmd))
+    app.add_handler(CommandHandler("calc",     calc_cmd))
+    app.add_handler(CommandHandler("tariff",   tariff_cmd))
     app.add_handler(CommandHandler("postpaid", postpaid_cmd))
     app.add_handler(CommandHandler("palli",    palli_cmd))
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
