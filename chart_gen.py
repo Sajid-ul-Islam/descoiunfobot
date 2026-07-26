@@ -236,10 +236,11 @@ def generate_usage_chart(
     system: str,
     bal_data: dict | None = None,
     info_data: dict | None = None,
-    lang: str = "en"
+    lang: str = "en",
+    days: int = 15
 ) -> io.BytesIO:
     """
-    Generates a 4-tier Executive Dashboard featuring KPI cards + Glowing Area Chart + Gradient Bar Chart.
+    Generates a 4-tier Executive Dashboard featuring KPI cards + Glowing Area Line Chart + Gradient Bar Chart.
     """
     bal_val = float((bal_data or {}).get("balance", 0))
     mo_use  = float((bal_data or {}).get("currentMonthConsumption", 0))
@@ -252,7 +253,7 @@ def generate_usage_chart(
     t_mo    = "⚡ Month Consumption" if lang == "en" else "⚡ চলতি মাসের ব্যবহার"
     t_avg   = "📉 Daily Average" if lang == "en" else "📉 দৈনিক গড় ব্যবহার"
     t_proj  = "🔮 Projected Usage" if lang == "en" else "🔮 আনুমানিক মাসিক ব্যবহার"
-    t_daily = "⚡ Daily Consumption & Cost Area Trend (Past 15 Days)" if lang == "en" else "⚡ দৈনিক ব্যবহার ও খরচের এরিয়া গ্রাফ (গত ১৫ দিন)"
+    t_daily = f"⚡ Daily Consumption & Cost Line Trend (Past {days} Days)" if lang == "en" else f"⚡ দৈনিক ব্যবহার ও খরচের লাইন গ্রাফ (গত {days} দিন)"
     t_mo_tr = "📅 12-Month Consumption & Bill Trend" if lang == "en" else "📅 ১২ মাসের ব্যবহার ও বিলের গ্রাফ"
     t_title = f"📊 DESCO Executive Dashboard — Account: {account_no} ({system})" if lang == "en" else f"📊 ডেসকো এক্সিকিউটিভ ড্যাশবোর্ড — অ্যাকাউন্ট: {account_no} ({system})"
 
@@ -333,9 +334,9 @@ def generate_usage_chart(
             taka.append(max(t_curr - t_prev, 0))
             dates.append(d_str[-5:])
 
-        dates = dates[-15:]
-        units = units[-15:]
-        taka  = taka[-15:]
+        dates = dates[-days:]
+        units = units[-days:]
+        taka  = taka[-days:]
 
         fig.add_trace(
             go.Scatter(

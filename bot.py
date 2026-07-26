@@ -224,6 +224,27 @@ def monthly_keyboard(lang: str = "en"):
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),      callback_data="start")],
     ])
 
+def chart_range_keyboard(lang: str = "en", days: int = 15):
+    btn_7  = "✅ 7 Days" if days == 7 else "7 Days"
+    btn_15 = "✅ 15 Days" if days == 15 else "15 Days"
+    btn_30 = "✅ 30 Days" if days == 30 else "30 Days"
+    btn_60 = "✅ 60 Days" if days == 60 else "60 Days"
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(btn_7,  callback_data="range_7"),
+            InlineKeyboardButton(btn_15, callback_data="range_15"),
+            InlineKeyboardButton(btn_30, callback_data="range_30"),
+            InlineKeyboardButton(btn_60, callback_data="range_60"),
+        ],
+        [
+            InlineKeyboardButton("📅 Specific Date Lookup", callback_data="range_date"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start"),
+        ],
+    ])
+
 def recharge_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(get_msg(lang, "view_recharge_chart"), callback_data="chart_recharge")],
@@ -494,6 +515,19 @@ async def providers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
     send = update.message.reply_text
+
+    pending = context.user_data.get("pending_action")
+    account_no = context.user_data.get("account_no")
+    system     = context.user_data.get("system", "unified")
+    meter_no   = context.user_data.get("meter_no", "")
+
+    if pending == "date_lookup" or "-" in user_input:
+        if account_no and system:
+            context.user_data.pop("pending_action", None)
+            await send("🔍 Searching date records...")
+            await lookup_specific_date(send, account_no, system, meter_no, user_input, context)
+            return ConversationHandler.END
+
     if not user_input.isdigit():
         await send(
             "❌ *Invalid.* Enter digits only (account or meter number), or /cancel.",
@@ -885,18 +919,18 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
 
-async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None):
+async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None, days: int = 15):
     msg_target = update.effective_message if update else None
     if msg_target:
-        await msg_target.reply_text("⏳ Generating visual analytics chart...")
+        await msg_target.reply_text(f"⏳ Generating visual analytics chart ({days} Days)...")
     else:
-        await send_fn("⏳ Generating visual analytics chart...")
+        await send_fn(f"⏳ Generating visual analytics chart ({days} Days)...")
 
     try:
         today = date.today()
 
-        # 1. Fetch daily data
-        date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        # 1. Fetch daily data for up to 60 days
+        date_from = (today - timedelta(days=max(days + 10, 65))).strftime("%Y-%m-%d")
         date_to   = today.strftime("%Y-%m-%d")
         prov = context.user_data.get("provider", "desco")
         daily_data, _, _ = desco_get(
@@ -915,9 +949,71 @@ async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, u
         # 3. Fetch balance data for KPI card
         bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no, provider=prov)
 
-        # 4. Render executive chart
+        # 4. Render executive chart with days filter
         lang = get_lang(update, context) if update else "en"
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang)
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=days)
+
+        # 5. Send photo with timeline range keyboard
+        if msg_target:
+            await msg_target.reply_photo(
+                photo=buf,
+                caption=f"📈 *DESCO Analytics Dashboard ({days} Days)*\n🔑 Account: `{account_no}` _{system}_",
+                parse_mode="Markdown",
+                reply_markup=chart_range_keyboard(lang, days=days),
+            )
+        else:
+            await send_fn("📈 Chart generated.", reply_markup=chart_range_keyboard(lang, days=days))
+
+    except Exception as e:
+        await send_fn(f"❌ Error generating chart: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
+
+async def lookup_specific_date(send_fn, account_no, system, meter_no, target_date_str, context):
+    today = date.today()
+    date_from = (today - timedelta(days=65)).strftime("%Y-%m-%d")
+    date_to   = today.strftime("%Y-%m-%d")
+    prov = context.user_data.get("provider", "desco")
+    daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+    if not daily_data or len(daily_data) < 2:
+        await send_fn("⚠️ No daily usage data available for date lookup.", reply_markup=back_keyboard())
+        return
+
+    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
+    match_rec = None
+    prev_rec = None
+
+    for i in range(1, len(sorted_daily)):
+        curr_d = str(sorted_daily[i].get("date", ""))
+        if target_date_str in curr_d:
+            match_rec = sorted_daily[i]
+            prev_rec  = sorted_daily[i-1]
+            break
+
+    if not match_rec:
+        await send_fn(f"❌ No consumption record found for date `{target_date_str}`.\n\nPlease check that the date is within the last 60 days.", parse_mode="Markdown", reply_markup=back_keyboard())
+        return
+
+    u_curr = float(match_rec.get("consumedUnit") or 0)
+    u_prev = float(prev_rec.get("consumedUnit") or 0) if prev_rec else 0
+    units  = max(u_curr - u_prev, 0)
+
+    t_curr = float(match_rec.get("consumedTaka") or 0)
+    t_prev = float(prev_rec.get("consumedTaka") or 0) if prev_rec else 0
+    taka   = max(t_curr - t_prev, 0)
+    rate   = taka / units if units > 0 else 0
+
+    await send_fn(
+        f"📅 *Specific Date Usage Info — {match_rec.get('date', target_date_str)}*\n\n"
+        f"🔑 Account: `{account_no}` _{system}_\n"
+        f"⚡ *Consumed Units:* `{units:.2f} kWh`\n"
+        f"💰 *Daily Cost:* *৳{taka:.2f}*\n"
+        f"📊 *Effective Unit Rate:* `@৳{rate:.2f} / kWh`\n"
+        f"🔌 Meter: `{meter_no}`\n"
+        f"🕒 Meter Reading Date: `{match_rec.get('date', 'N/A')}`",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard(),
+    )
 
 async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
@@ -1036,7 +1132,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if data.startswith("set_prov_"):
+    if data in ["range_7", "range_15", "range_30", "range_60"]:
+        target_days = int(data.replace("range_", ""))
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system", "unified")
+        meter_no   = context.user_data.get("meter_no", "")
+        if account_no and system:
+            await fetch_and_send_chart(send, account_no, system, meter_no, context, update=update, days=target_days)
+        else:
+            await send("❌ Please submit an account number first.", reply_markup=main_keyboard())
+        return
+
+    if data == "range_date":
+        context.user_data["pending_action"] = "date_lookup"
+        await send(
+            "📅 *Specific Date Usage Lookup*\n\n"
+            "Please type the date you want to inspect in `YYYY-MM-DD` or `MM-DD` format:\n"
+            "_(Example: `2026-07-25` or `07-25`)_\n\n"
+            "Or type /cancel to go back.",
+            parse_mode="Markdown",
+        )
+        return ASK_ACCOUNT
         prov_code = data.replace("set_prov_", "")
         set_user_provider(update.effective_user.id, prov_code)
         context.user_data["provider"] = prov_code
@@ -1357,7 +1473,7 @@ def main():
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
