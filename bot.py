@@ -180,6 +180,9 @@ def main_keyboard():
             InlineKeyboardButton("📅 Monthly Usage",   callback_data="monthly"),
             InlineKeyboardButton("💳 Recharge History", callback_data="recharge"),
         ],
+        [
+            InlineKeyboardButton("📄 Postpaid Bill Info", callback_data="postpaid_info"),
+        ],
         [InlineKeyboardButton("❓ Help", callback_data="help")],
     ])
 
@@ -198,6 +201,13 @@ def monthly_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📈 View Monthly Chart", callback_data="chart_monthly")],
         [InlineKeyboardButton("🏠 Main Menu",          callback_data="start")],
+    ])
+
+def postpaid_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📄 DESCO E-Bill Portal", url="https://ebill.desco.org.bd/")],
+        [InlineKeyboardButton("🌐 DESCO OCSMS Portal", url="https://ocsms.desco.org.bd/")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="start")],
     ])
 
 # =====================================
@@ -270,6 +280,21 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_keyboard(),
     )
 
+
+async def postpaid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    track_user(update.effective_user, "/postpaid")
+    await update.message.reply_text(
+        "📄 *DESCO Postpaid Electricity Bill Check*\n\n"
+        "If you are a DESCO Postpaid customer (monthly bill user), access your bill through:\n\n"
+        "1️⃣ *DESCO E-Bill Portal:* Download PDF monthly bill\n"
+        "2️⃣ *bKash App:* Pay Bill → Electricity (Postpaid) → DESCO → Enter Account No.\n"
+        "3️⃣ *Nagad App:* Bill Pay → DESCO Postpaid\n"
+        "4️⃣ *Rocket App:* Utility Pay → DESCO Postpaid",
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=postpaid_keyboard(),
+    )
+
 # =====================================
 # ACCOUNT NUMBER COLLECTION
 # =====================================
@@ -288,12 +313,25 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     system, account_no, meter_no, info_data = detect_system(user_input)
 
     if not system:
-        await send(
-            "❌ *Not found on DESCO servers.*\n\n"
-            "Please double-check your account number or meter number.",
-            parse_mode="Markdown",
-            reply_markup=back_keyboard(),
-        )
+        if len(user_input) == 8:
+            await send(
+                f"ℹ️ Account `{user_input}` appears to be a *DESCO Postpaid* connection (Monthly Billing).\n\n"
+                "Prepaid smart meter data is not active for this account, but you can check and pay your postpaid bill via:\n\n"
+                "📄 *DESCO E-Bill Portal:* [ebill.desco.org.bd](https://ebill.desco.org.bd/)\n"
+                "🌐 *DESCO OCSMS:* [ocsms.desco.org.bd](https://ocsms.desco.org.bd/)\n"
+                "📱 *bKash:* Pay Bill → Electricity (Postpaid) → DESCO\n"
+                "📱 *Nagad:* Bill Pay → DESCO Postpaid",
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+                reply_markup=postpaid_keyboard(),
+            )
+        else:
+            await send(
+                "❌ *Not found on DESCO servers.*\n\n"
+                "Please double-check your account number or meter number.",
+                parse_mode="Markdown",
+                reply_markup=back_keyboard(),
+            )
         return ConversationHandler.END
 
     context.user_data["account_no"] = account_no
@@ -800,6 +838,7 @@ async def setup_commands(app):
         BotCommand("daily",   "📆 Daily usage & cost breakdown"),
         BotCommand("monthly", "📅 Monthly consumption history"),
         BotCommand("recharge","💳 Recharge history (12 months)"),
+        BotCommand("postpaid","📄 Postpaid bill guidance & links"),
         BotCommand("forget",  "🗑 Clear saved account"),
         BotCommand("help",    "❓ Help"),
         BotCommand("cancel",  "❌ Cancel"),
@@ -861,11 +900,12 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    app.add_handler(CommandHandler("start",  start))
-    app.add_handler(CommandHandler("help",   help_command))
-    app.add_handler(CommandHandler("forget", forget_command))
-    app.add_handler(CommandHandler("admin",  admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help)$"))
+    app.add_handler(CommandHandler("start",    start))
+    app.add_handler(CommandHandler("help",     help_command))
+    app.add_handler(CommandHandler("forget",   forget_command))
+    app.add_handler(CommandHandler("postpaid", postpaid_command if 'postpaid_command' in locals() else postpaid_cmd))
+    app.add_handler(CommandHandler("admin",    admin_cmd))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|postpaid_info)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
