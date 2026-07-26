@@ -1,4 +1,3 @@
-import asyncio
 import os
 import requests
 import urllib3
@@ -33,176 +32,246 @@ BOT_TOKEN   = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT        = int(os.getenv("PORT", 10000))
 
+BASE_URL = "https://prepaid.desco.org.bd/api/unified/customer"
+
 # =====================================
 # CONVERSATION STATES
 # =====================================
 
-WAITING_FOR_ACCOUNT = 0
+ASK_ACCOUNT = 0
+
+# What to do after collecting the account number
+ACTION_BALANCE  = "balance"
+ACTION_INFO     = "info"
 
 # =====================================
 # DESCO API
 # =====================================
 
-def get_balance_data(account_no: str):
-
-    url = (
-        "https://prepaid.desco.org.bd/api/unified/"
-        f"customer/getBalance?accountNo={account_no}"
-    )
-
-    response = requests.get(
-        url,
-        timeout=15,
-        verify=False
-    )
-
+def desco_get(endpoint: str, account_no: str) -> dict | None:
+    url = f"{BASE_URL}/{endpoint}?accountNo={account_no}"
+    response = requests.get(url, timeout=15, verify=False)
     result = response.json()
-
     return result.get("data")
 
 # =====================================
 # KEYBOARDS
 # =====================================
 
-def main_menu_keyboard():
+def main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚡ Check Balance", callback_data="balance")],
-        [InlineKeyboardButton("❓ Help",          callback_data="help")],
+        [
+            InlineKeyboardButton("⚡ Balance",       callback_data="balance"),
+            InlineKeyboardButton("👤 Customer Info", callback_data="info"),
+        ],
+        [InlineKeyboardButton("❓ Help", callback_data="help")],
+    ])
+
+def back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="start")],
     ])
 
 # =====================================
-# COMMANDS
+# HELPERS
+# =====================================
+
+async def send_main_menu(send_fn, account_no: str | None = None):
+    saved = f"\n\n💾 Saved account: `{account_no}`" if account_no else ""
+    await send_fn(
+        f"👋 *Welcome to DESCO Info Bot!*{saved}\n\n"
+        "Choose an option:",
+        parse_mode="Markdown",
+        reply_markup=main_keyboard(),
+    )
+
+async def ask_for_account(send_fn, action: str, context: ContextTypes.DEFAULT_TYPE):
+    """Ask the user for their account number if not saved."""
+    saved = context.user_data.get("account_no")
+    if saved:
+        # Use saved account directly without asking
+        return saved
+    await send_fn(
+        f"🔢 Enter your *DESCO account number*:\n\n"
+        f"_Tip: found on your bill or meter card._",
+        parse_mode="Markdown",
+    )
+    context.user_data["pending_action"] = action
+    return None  # Signal: waiting for input
+
+# =====================================
+# COMMANDS — START & HELP
 # =====================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = (
-        "👋 Welcome to *DESCO Info Bot*!\n\n"
-        "I can check your prepaid electricity balance "
-        "from DESCO instantly.\n\n"
-        "Choose an option below or use the menu:"
-    )
-
-    await update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
-    )
+    send = update.message.reply_text
+    account_no = context.user_data.get("account_no")
+    await send_main_menu(send, account_no)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    text = (
-        "📖 *DESCO Info Bot — Help*\n\n"
-        "Available commands:\n"
-        "• /start — Show main menu\n"
-        "• /balance — Check your prepaid balance\n"
-        "• /help — Show this help message\n\n"
-        "To check your balance, send /balance and "
-        "enter your DESCO account number when prompted.\n\n"
-        "You can find your account number on your "
-        "electricity bill or meter card."
-    )
-
     await update.message.reply_text(
-        text,
+        "📖 *DESCO Info Bot — Help*\n\n"
+        "*Commands:*\n"
+        "• /start — Main menu\n"
+        "• /balance — Check prepaid balance\n"
+        "• /info — Customer & meter details\n"
+        "• /forget — Clear saved account number\n"
+        "• /help — This message\n"
+        "• /cancel — Cancel current action\n\n"
+        "*How it works:*\n"
+        "The bot remembers your account number after first use, "
+        "so you don\'t have to enter it every time.\n\n"
+        "Use /forget to clear the saved number.",
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_keyboard(),
     )
 
 
+async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("account_no", None)
+    await update.message.reply_text(
+        "🗑 Saved account number cleared.\n"
+        "You\'ll be asked again on next use.",
+        reply_markup=main_keyboard(),
+    )
+
 # =====================================
-# BALANCE CONVERSATION
+# COMMANDS — BALANCE
 # =====================================
 
-async def balance_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    # Works from both /balance command and inline button
-    if update.callback_query:
-        await update.callback_query.answer()
-        send = update.callback_query.message.reply_text
+async def balance_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    send = update.message.reply_text
+    result = await ask_for_account(send, ACTION_BALANCE, context)
+    if result:
+        await fetch_and_send_balance(send, result, context)
     else:
-        send = update.message.reply_text
-
-    await send(
-        "🔢 Please enter your *DESCO account number*:\n\n"
-        "_Tip: You can find it on your bill or meter card._",
-        parse_mode="Markdown",
-    )
-
-    return WAITING_FOR_ACCOUNT
+        return ASK_ACCOUNT
+    return ConversationHandler.END
 
 
-async def balance_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def fetch_and_send_balance(send_fn, account_no: str, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["account_no"] = account_no
+    await send_fn("⏳ Fetching balance...")
+    try:
+        data = desco_get("getBalance", account_no)
+        if not data:
+            await send_fn(
+                "❌ *No data found* for that account number.",
+                parse_mode="Markdown",
+                reply_markup=back_keyboard(),
+            )
+            return
 
+        balance  = data.get("balance", 0)
+        usage    = data.get("currentMonthConsumption", 0)
+        meter    = data.get("meterNo", "N/A")
+        reading  = data.get("readingTime", "N/A")
+
+        await send_fn(
+            f"⚡ *Balance Info*\n\n"
+            f"🔑 Account: `{account_no}`\n"
+            f"💰 Balance: *৳{balance}*\n"
+            f"📊 This Month: `{float(usage):.2f} Unit`\n"
+            f"🔌 Meter No: `{meter}`\n"
+            f"🕒 Last Reading: `{reading}`",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
+# =====================================
+# COMMANDS — CUSTOMER INFO
+# =====================================
+
+async def info_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    send = update.message.reply_text
+    result = await ask_for_account(send, ACTION_INFO, context)
+    if result:
+        await fetch_and_send_info(send, result, context)
+    else:
+        return ASK_ACCOUNT
+    return ConversationHandler.END
+
+
+async def fetch_and_send_info(send_fn, account_no: str, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["account_no"] = account_no
+    await send_fn("⏳ Fetching customer info...")
+    try:
+        data = desco_get("getCustomerInfo", account_no)
+        if not data:
+            await send_fn(
+                "❌ *No data found* for that account number.",
+                parse_mode="Markdown",
+                reply_markup=back_keyboard(),
+            )
+            return
+
+        name     = data.get("customerName", "N/A")
+        phone    = data.get("contactNo", "N/A")
+        address  = data.get("installationAddress", "N/A")
+        feeder   = data.get("feederName", "N/A")
+        sd       = data.get("SDName", "N/A")
+        tariff   = data.get("tariffSolution", "N/A")
+        phase    = data.get("phaseType", "N/A")
+        load     = data.get("sanctionLoad", "N/A")
+        meter    = data.get("meterNo", "N/A")
+        model    = data.get("meterModel", "N/A")
+        inst_dt  = data.get("installationDate", "N/A")
+        trafo    = data.get("transformer", "N/A")
+
+        await send_fn(
+            f"👤 *Customer Info*\n\n"
+            f"🔑 Account: `{account_no}`\n"
+            f"👤 Name: *{name}*\n"
+            f"📞 Phone: `{phone}`\n"
+            f"📍 Address: {address}\n\n"
+            f"⚡ *Meter Details*\n"
+            f"🔌 Meter No: `{meter}`\n"
+            f"📦 Model: `{model}`\n"
+            f"📅 Installed: `{inst_dt}`\n"
+            f"🔧 Phase: `{phase}` | Load: `{load} kW`\n\n"
+            f"🏗 *Supply Info*\n"
+            f"🌐 Feeder: `{feeder}`\n"
+            f"🏢 Sub-Division: `{sd}`\n"
+            f"🔄 Transformer: `{trafo}`\n"
+            f"📋 Tariff: `{tariff}`",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(),
+        )
+    except Exception as e:
+        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
+# =====================================
+# CONVERSATION — ACCOUNT NUMBER INPUT
+# =====================================
+
+async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     account_no = update.message.text.strip()
+    send = update.message.reply_text
 
     if not account_no.isdigit():
-
-        await update.message.reply_text(
-            "❌ *Invalid account number.*\n"
-            "Please enter digits only.\n\n"
-            "Try /balance again.",
+        await send(
+            "❌ *Invalid account number.* Digits only.\n\nTry again or /cancel.",
             parse_mode="Markdown",
         )
+        return ASK_ACCOUNT  # Stay in state, let them retry
 
-        return ConversationHandler.END
+    action = context.user_data.get("pending_action", ACTION_BALANCE)
 
-    await update.message.reply_text("⏳ Fetching your balance...")
+    if action == ACTION_BALANCE:
+        await fetch_and_send_balance(send, account_no, context)
+    elif action == ACTION_INFO:
+        await fetch_and_send_info(send, account_no, context)
 
-    try:
-
-        data = get_balance_data(account_no)
-
-        if not data:
-
-            await update.message.reply_text(
-                "❌ *No data found* for that account number.\n"
-                "Please check and try /balance again.",
-                parse_mode="Markdown",
-                reply_markup=main_menu_keyboard(),
-            )
-
-            return ConversationHandler.END
-
-        balance_amount = data.get("balance", 0)
-        monthly_usage  = data.get("currentMonthConsumption", 0)
-        meter_no       = data.get("meterNo", "N/A")
-        reading_time   = data.get("readingTime", "N/A")
-
-        msg = (
-            f"⚡ *DESCO Info*\n\n"
-            f"🔑 Account: `{account_no}`\n"
-            f"💰 Balance: *৳{balance_amount}*\n"
-            f"📊 Monthly Usage: `{float(monthly_usage):.2f} Unit`\n"
-            f"🔌 Meter: `{meter_no}`\n"
-            f"🕒 Reading: `{reading_time}`"
-        )
-
-        await update.message.reply_text(
-            msg,
-            parse_mode="Markdown",
-            reply_markup=main_menu_keyboard(),
-        )
-
-    except Exception as e:
-
-        await update.message.reply_text(
-            f"❌ *Error fetching data:*\n`{e}`",
-            parse_mode="Markdown",
-            reply_markup=main_menu_keyboard(),
-        )
-
+    context.user_data.pop("pending_action", None)
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text(
-        "❌ Cancelled.",
-        reply_markup=main_menu_keyboard(),
-    )
-
+    context.user_data.pop("pending_action", None)
+    await update.message.reply_text("❌ Cancelled.", reply_markup=main_keyboard())
     return ConversationHandler.END
 
 # =====================================
@@ -210,40 +279,65 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     query = update.callback_query
     await query.answer()
+    send = query.message.reply_text
+    data = query.data
 
-    if query.data == "help":
+    if data == "start":
+        account_no = context.user_data.get("account_no")
+        await send_main_menu(send, account_no)
 
-        text = (
+    elif data == "help":
+        await send(
             "📖 *DESCO Info Bot — Help*\n\n"
-            "Available commands:\n"
-            "• /start — Show main menu\n"
-            "• /balance — Check your prepaid balance\n"
-            "• /help — Show this help message\n\n"
-            "To check your balance, send /balance and "
-            "enter your DESCO account number when prompted.\n\n"
-            "You can find your account number on your "
-            "electricity bill or meter card."
+            "*Commands:*\n"
+            "• /start — Main menu\n"
+            "• /balance — Prepaid balance\n"
+            "• /info — Customer & meter details\n"
+            "• /forget — Clear saved account\n"
+            "• /help — Help\n"
+            "• /cancel — Cancel action",
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(),
         )
 
-        await query.message.reply_text(
-            text,
-            parse_mode="Markdown",
-            reply_markup=main_menu_keyboard(),
-        )
+    elif data == "balance":
+        account_no = context.user_data.get("account_no")
+        if account_no:
+            await fetch_and_send_balance(send, account_no, context)
+        else:
+            await send(
+                "🔢 Enter your *DESCO account number*:",
+                parse_mode="Markdown",
+            )
+            context.user_data["pending_action"] = ACTION_BALANCE
+            return ASK_ACCOUNT
+
+    elif data == "info":
+        account_no = context.user_data.get("account_no")
+        if account_no:
+            await fetch_and_send_info(send, account_no, context)
+        else:
+            await send(
+                "🔢 Enter your *DESCO account number*:",
+                parse_mode="Markdown",
+            )
+            context.user_data["pending_action"] = ACTION_INFO
+            return ASK_ACCOUNT
 
 # =====================================
 # REGISTER BOT COMMANDS (/ MENU)
 # =====================================
 
 async def setup_commands(app):
-
     await app.bot.set_my_commands([
         BotCommand("start",   "🏠 Main menu"),
         BotCommand("balance", "⚡ Check prepaid balance"),
+        BotCommand("info",    "👤 Customer & meter info"),
+        BotCommand("forget",  "🗑 Clear saved account number"),
         BotCommand("help",    "❓ Help & instructions"),
+        BotCommand("cancel",  "❌ Cancel current action"),
     ])
 
 # =====================================
@@ -258,33 +352,28 @@ def main():
         .build()
     )
 
-    # Inline button handler (must be before ConversationHandler)
-    app.add_handler(
-        CallbackQueryHandler(button_handler, pattern="^help$")
-    )
-
-    # Balance conversation (inline button "balance" as entry point too)
-    balance_conv = ConversationHandler(
+    # Shared conversation handler covering all commands that need an account no
+    conv = ConversationHandler(
         entry_points=[
-            CommandHandler("balance", balance_start),
-            CallbackQueryHandler(balance_start, pattern="^balance$"),
+            CommandHandler("balance",  balance_cmd),
+            CommandHandler("info",     info_cmd),
+            CallbackQueryHandler(button_handler, pattern="^(balance|info)$"),
         ],
         states={
-            WAITING_FOR_ACCOUNT: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    balance_fetch
-                )
+            ASK_ACCOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, account_received),
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cancel)
+            CommandHandler("cancel", cancel),
         ],
     )
 
-    app.add_handler(CommandHandler("start",   start))
-    app.add_handler(CommandHandler("help",    help_command))
-    app.add_handler(balance_conv)
+    app.add_handler(CommandHandler("start",  start))
+    app.add_handler(CommandHandler("help",   help_command))
+    app.add_handler(CommandHandler("forget", forget_command))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help)$"))
+    app.add_handler(conv)
 
     app.post_init = setup_commands
 
