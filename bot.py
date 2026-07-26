@@ -23,6 +23,7 @@ from telegram.ext import (
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from db import init_db, track_user, get_admin_stats
+from chart_gen import generate_usage_chart
 
 # =====================================
 # CONFIG
@@ -51,6 +52,7 @@ ACTION_SUMMARY  = "summary"
 ACTION_RECHARGE = "recharge"
 ACTION_MONTHLY  = "monthly"
 ACTION_DAILY    = "daily"
+ACTION_CHART    = "chart"
 
 # =====================================
 # DESCO API
@@ -168,13 +170,14 @@ def main_keyboard():
         ],
         [
             InlineKeyboardButton("📊 Stats",          callback_data="stats"),
+            InlineKeyboardButton("📈 Visual Chart",   callback_data="chart"),
+        ],
+        [
             InlineKeyboardButton("📋 Summary",        callback_data="summary"),
-        ],
-        [
             InlineKeyboardButton("📆 Daily Usage",     callback_data="daily"),
-            InlineKeyboardButton("📅 Monthly Usage",   callback_data="monthly"),
         ],
         [
+            InlineKeyboardButton("📅 Monthly Usage",   callback_data="monthly"),
             InlineKeyboardButton("💳 Recharge History", callback_data="recharge"),
         ],
         [InlineKeyboardButton("❓ Help", callback_data="help")],
@@ -573,6 +576,49 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
 
+async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None):
+    msg_target = update.effective_message if update else None
+    if msg_target:
+        await msg_target.reply_text("⏳ Generating visual analytics chart...")
+    else:
+        await send_fn("⏳ Generating visual analytics chart...")
+
+    try:
+        today = date.today()
+
+        # 1. Fetch daily data
+        date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+        date_to   = today.strftime("%Y-%m-%d")
+        daily_data, _, _ = desco_get(
+            system, "getCustomerDailyConsumption", account_no, meter_no,
+            dateFrom=date_from, dateTo=date_to,
+        )
+
+        # 2. Fetch monthly data
+        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+        month_to   = today.strftime("%Y-%m")
+        monthly_data, _, _ = desco_get(
+            system, "getCustomerMonthlyConsumption", account_no, meter_no,
+            monthFrom=month_from, monthTo=month_to,
+        )
+
+        # 3. Render chart
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system)
+
+        # 4. Send photo
+        if msg_target:
+            await msg_target.reply_photo(
+                photo=buf,
+                caption=f"📈 *DESCO Analytics Dashboard*\n🔑 Account: `{account_no}` _{system}_",
+                parse_mode="Markdown",
+                reply_markup=main_keyboard(),
+            )
+        else:
+            await send_fn("📈 Chart generated.", reply_markup=main_keyboard())
+
+    except Exception as e:
+        await send_fn(f"❌ Error generating chart: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+
 # =====================================
 # COMMAND ENTRY POINTS
 # =====================================
@@ -591,6 +637,7 @@ async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
         ACTION_RECHARGE: fetch_and_send_recharge,
         ACTION_MONTHLY:  fetch_and_send_monthly,
         ACTION_DAILY:    fetch_and_send_daily,
+        ACTION_CHART:    lambda send_fn, acc, sys, met, ctx: fetch_and_send_chart(send_fn, acc, sys, met, ctx, update=update),
     }
     await dispatch[action](send, account_no, system, meter_no, context)
     return ConversationHandler.END
@@ -602,6 +649,7 @@ async def summary_cmd(u, c):  return await _cmd(ACTION_SUMMARY,  u, c)
 async def recharge_cmd(u, c): return await _cmd(ACTION_RECHARGE, u, c)
 async def monthly_cmd(u, c):  return await _cmd(ACTION_MONTHLY,  u, c)
 async def daily_cmd(u, c):    return await _cmd(ACTION_DAILY,    u, c)
+async def chart_cmd(u, c):    return await _cmd(ACTION_CHART,    u, c)
 
 # =====================================
 # INLINE BUTTON HANDLER
@@ -642,6 +690,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "recharge": (ACTION_RECHARGE, fetch_and_send_recharge),
         "monthly":  (ACTION_MONTHLY,  fetch_and_send_monthly),
         "daily":    (ACTION_DAILY,    fetch_and_send_daily),
+        "chart":    (ACTION_CHART,    lambda send, acc, sys, met, ctx: fetch_and_send_chart(send, acc, sys, met, ctx, update=update)),
     }
     if data in ACTION_MAP:
         action, fetch_fn = ACTION_MAP[data]
@@ -697,6 +746,7 @@ async def setup_commands(app):
         BotCommand("balance", "⚡ Prepaid balance"),
         BotCommand("info",    "👤 Customer & meter info"),
         BotCommand("stats",   "📊 Usage stats & bill estimate"),
+        BotCommand("chart",   "📈 Visual analytics chart"),
         BotCommand("summary", "📋 Full account summary"),
         BotCommand("daily",   "📆 Daily usage & cost breakdown"),
         BotCommand("monthly", "📅 Monthly consumption history"),
@@ -745,6 +795,7 @@ def main():
         ("recharge", recharge_cmd),
         ("monthly",  monthly_cmd),
         ("daily",    daily_cmd),
+        ("chart",    chart_cmd),
     ]
     ALL_ACTIONS = "|".join(a for a, _ in CMDS)
 
