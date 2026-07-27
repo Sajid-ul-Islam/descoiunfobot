@@ -3,7 +3,6 @@
 
 import re
 import os
-import time
 import requests
 import urllib3
 from bs4 import BeautifulSoup
@@ -44,7 +43,7 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
     """Fetches live bill / account data from BPDB portal (billonweb.bpdb.gov.bd)."""
     url = PORTAL_URLS["bpdb"]
     try:
-        r = SESSION.get(url, timeout=10, verify=False)
+        r = SESSION.get(url, timeout=8, verify=False)
         captcha_val = _solve_math_captcha(r.text)
         
         post_data = {
@@ -52,10 +51,9 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
             "meter_no": meter_no,
             "captcha": captcha_val,
         }
-        r2 = SESSION.post(f"{url}search", data=post_data, timeout=10, verify=False)
+        r2 = SESSION.post(f"{url}search", data=post_data, timeout=8, verify=False)
         soup = BeautifulSoup(r2.text, "html.parser")
         
-        # Parse customer info if available
         name_tag = soup.find(text=re.compile(r"Customer Name|Grahok Name|Name", re.I))
         name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"BPDB Customer ({account_no})"
         
@@ -84,7 +82,7 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
             "status": "OK" if balance > 0 else "PORTAL_GUIDE",
         }
         return data, 200, "OK"
-    except Exception as e:
+    except Exception:
         data = {
             "accountNo": account_no,
             "meterNo": meter_no or f"BPDB-{account_no[-6:]}",
@@ -102,69 +100,168 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
 def fetch_dpdc_portal(account_no: str, meter_no: str = "") -> tuple:
     """Fetches live account data from DPDC portal (dpdc.org.bd)."""
     url = PORTAL_URLS["dpdc"]
-    data = {
-        "accountNo": account_no,
-        "meterNo": meter_no or f"DPDC-{account_no[-6:]}",
-        "customerName": f"DPDC Customer (`{account_no}`)",
-        "balance": 0.0,
-        "currentMonthConsumption": 0.0,
-        "provider": "DPDC",
-        "system": "dpdc_portal",
-        "portalUrl": url,
-        "status": "OK",
-    }
-    return data, 200, "OK"
+    try:
+        r = SESSION.get(f"{url}site/bill_query", timeout=8, verify=False)
+        captcha_val = _solve_math_captcha(r.text)
+        r2 = SESSION.post(f"{url}site/bill_query", data={"customer_num": account_no, "captcha": captcha_val}, timeout=8, verify=False)
+        soup = BeautifulSoup(r2.text, "html.parser")
+        name_tag = soup.find(text=re.compile(r"Customer Name|Name", re.I))
+        name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"DPDC Customer (`{account_no}`)"
+        bal_tag = soup.find(text=re.compile(r"Payable|Amount|Taka|TK", re.I))
+        balance = 0.0
+        if bal_tag and bal_tag.parent:
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", bal_tag.parent.text)
+            if nums:
+                balance = float(nums[0])
+
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"DPDC-{account_no[-6:]}",
+            "customerName": name,
+            "balance": balance,
+            "currentMonthConsumption": 0.0,
+            "provider": "DPDC",
+            "system": "dpdc_portal",
+            "portalUrl": url,
+            "status": "OK" if balance > 0 else "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+    except Exception:
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"DPDC-{account_no[-6:]}",
+            "customerName": f"DPDC Customer (`{account_no}`)",
+            "balance": 0.0,
+            "currentMonthConsumption": 0.0,
+            "provider": "DPDC",
+            "system": "dpdc_portal",
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
 
 
 def fetch_nesco_portal(account_no: str, meter_no: str = "") -> tuple:
     """Fetches live account data from NESCO portal (nesco.gov.bd)."""
     url = PORTAL_URLS["nesco"]
-    data = {
-        "accountNo": account_no,
-        "meterNo": meter_no or f"NESCO-{account_no[-6:]}",
-        "customerName": f"NESCO Customer (`{account_no}`)",
-        "balance": 0.0,
-        "currentMonthConsumption": 0.0,
-        "provider": "NESCO",
-        "system": "nesco_portal",
-        "portalUrl": url,
-        "status": "OK",
-    }
-    return data, 200, "OK"
+    try:
+        r = SESSION.get(url, timeout=8, verify=False)
+        captcha_val = _solve_math_captcha(r.text)
+        r2 = SESSION.post(f"{url}bill_query", data={"account_no": account_no, "captcha": captcha_val}, timeout=8, verify=False)
+        soup = BeautifulSoup(r2.text, "html.parser")
+        name_tag = soup.find(text=re.compile(r"Customer Name|Name", re.I))
+        name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"NESCO Customer (`{account_no}`)"
+        bal_tag = soup.find(text=re.compile(r"Net Payable|Total Bill|Taka", re.I))
+        balance = 0.0
+        if bal_tag and bal_tag.parent:
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", bal_tag.parent.text)
+            if nums:
+                balance = float(nums[0])
+
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"NESCO-{account_no[-6:]}",
+            "customerName": name,
+            "balance": balance,
+            "currentMonthConsumption": 0.0,
+            "provider": "NESCO",
+            "system": "nesco_portal",
+            "portalUrl": url,
+            "status": "OK" if balance > 0 else "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+    except Exception:
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"NESCO-{account_no[-6:]}",
+            "customerName": f"NESCO Customer (`{account_no}`)",
+            "balance": 0.0,
+            "currentMonthConsumption": 0.0,
+            "provider": "NESCO",
+            "system": "nesco_portal",
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
 
 
 def fetch_wzpdcl_portal(account_no: str, meter_no: str = "") -> tuple:
     """Fetches live account data from WZPDCL portal (wzpdcl.gov.bd)."""
     url = PORTAL_URLS["wzpdcl"]
-    data = {
-        "accountNo": account_no,
-        "meterNo": meter_no or f"WZPDCL-{account_no[-6:]}",
-        "customerName": f"WZPDCL Customer (`{account_no}`)",
-        "balance": 0.0,
-        "currentMonthConsumption": 0.0,
-        "provider": "WZPDCL",
-        "system": "wzpdcl_portal",
-        "portalUrl": url,
-        "status": "OK",
-    }
-    return data, 200, "OK"
+    try:
+        r = SESSION.get(url, timeout=8, verify=False)
+        captcha_val = _solve_math_captcha(r.text)
+        r2 = SESSION.post(f"{url}bill_info", data={"account_no": account_no, "captcha": captcha_val}, timeout=8, verify=False)
+        soup = BeautifulSoup(r2.text, "html.parser")
+        name_tag = soup.find(text=re.compile(r"Customer Name|Name", re.I))
+        name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"WZPDCL Customer (`{account_no}`)"
+        bal_tag = soup.find(text=re.compile(r"Net Payable|Amount", re.I))
+        balance = 0.0
+        if bal_tag and bal_tag.parent:
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", bal_tag.parent.text)
+            if nums:
+                balance = float(nums[0])
+
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"WZPDCL-{account_no[-6:]}",
+            "customerName": name,
+            "balance": balance,
+            "currentMonthConsumption": 0.0,
+            "provider": "WZPDCL",
+            "system": "wzpdcl_portal",
+            "portalUrl": url,
+            "status": "OK" if balance > 0 else "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+    except Exception:
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"WZPDCL-{account_no[-6:]}",
+            "customerName": f"WZPDCL Customer (`{account_no}`)",
+            "balance": 0.0,
+            "currentMonthConsumption": 0.0,
+            "provider": "WZPDCL",
+            "system": "wzpdcl_portal",
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
 
 
 def fetch_breb_portal(account_no: str, meter_no: str = "") -> tuple:
     """Fetches account data for Palli Bidyut (BREB)."""
     url = PORTAL_URLS["breb"]
-    data = {
-        "accountNo": account_no,
-        "meterNo": meter_no or f"PBS-{account_no[-6:]}",
-        "customerName": f"Palli Bidyut Customer (`{account_no}`)",
-        "balance": 0.0,
-        "currentMonthConsumption": 0.0,
-        "provider": "BREB",
-        "system": "pbs_ussd",
-        "portalUrl": url,
-        "status": "OK",
-    }
-    return data, 200, "OK"
+    try:
+        r = SESSION.get(url, timeout=8, verify=False)
+        soup = BeautifulSoup(r.text, "html.parser")
+        name_tag = soup.find(text=re.compile(r"Customer Name|Name", re.I))
+        name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"Palli Bidyut Customer (`{account_no}`)"
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"PBS-{account_no[-6:]}",
+            "customerName": name,
+            "balance": 0.0,
+            "currentMonthConsumption": 0.0,
+            "provider": "BREB",
+            "system": "pbs_ussd",
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+    except Exception:
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"PBS-{account_no[-6:]}",
+            "customerName": f"Palli Bidyut Customer (`{account_no}`)",
+            "balance": 0.0,
+            "currentMonthConsumption": 0.0,
+            "provider": "BREB",
+            "system": "pbs_ussd",
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
 
 
 def scrape_portal_data(provider_id: str, account_no: str, meter_no: str = "") -> tuple:

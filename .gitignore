@@ -2,3 +2,11 @@
 __pycache__/
 *.pyc
 *.pyo
+
+bot_data.db
+*.db
+venv/
+.venv/
+.mimocode/
+.idea/
+.vscode/

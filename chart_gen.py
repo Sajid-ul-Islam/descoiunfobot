@@ -259,7 +259,7 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
 def _to_units_and_taka(raw_unit, raw_taka):
     """Auto-detect if consumedUnit is actually Taka or real kWh units.
     Returns (units_kwh, taka_bdt) as floats."""
-    from bot import estimate_bill, estimate_units_from_taka
+    from tariff_calc import estimate_bill, estimate_units_from_taka
     u = float(raw_unit or 0)
     t = float(raw_taka or 0)
     if u > 500 and t == 0:
@@ -292,7 +292,7 @@ def generate_usage_chart(
       Row 5   : This month vs Last month comparison
       Row 6   : 12-month kWh & bill trend
     """
-    from bot import estimate_bill, estimate_units_from_taka
+    from tariff_calc import estimate_bill, estimate_units_from_taka
     from datetime import date, timedelta
     import calendar
 

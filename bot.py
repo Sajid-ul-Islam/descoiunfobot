@@ -1,6 +1,5 @@
 import os
 import logging
-import requests
 import urllib3
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -12,7 +11,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
+from telegram import Update, BotCommand, BotCommandScopeChat
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -29,16 +28,92 @@ from telegram.ext import (
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from db import init_db, track_user, get_admin_stats, get_user_language, set_user_language, get_user_provider, set_user_provider
-from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart, generate_usage_chart, generate_custom_date_range_chart
+from db import init_db, track_user, set_user_language, set_user_provider
+from chart_gen import generate_daily_chart, generate_monthly_chart, generate_recharge_chart
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_nesco_text, get_all_coverage_text
-from providers_adapter import provider_get, is_api_provider, get_provider_systems, PROVIDERS
-from tariff_tips import get_tariff_tip, get_low_balance_warning, get_tariff_slab_warning
+from providers_adapter import is_api_provider, PROVIDERS
+from tariff_tips import get_low_balance_warning, get_tariff_slab_warning
 from report_gen import generate_csv_report, generate_text_statement
 from appliance_calc import get_calc_text, get_tariff_guide_text
-from ai_assistant import query_ai_assistant, extract_ai_intent, generate_ai_error_explanation
+from ai_assistant import generate_ai_error_explanation
+
+from tariff_calc import (
+    desco_get,
+    detect_system,
+    convert_bn_digits_to_en,
+    estimate_bill,
+    estimate_units_from_taka,
+    calc_stats,
+)
+from keyboards import (
+    main_keyboard,
+    back_keyboard,
+    daily_keyboard,
+    monthly_keyboard,
+    chart_range_keyboard,
+    export_keyboard,
+    recharge_keyboard,
+    postpaid_keyboard,
+    palli_keyboard,
+    bpdb_keyboard,
+    providers_keyboard,
+    settings_keyboard,
+    other_keyboard,
+    provider_selector_keyboard,
+)
+from fetch_handlers import (
+    get_lang,
+    fetch_and_send_balance,
+    fetch_and_send_info,
+    fetch_and_send_stats,
+    fetch_and_send_summary,
+    fetch_and_send_recharge,
+    fetch_and_send_monthly,
+    fetch_and_send_daily,
+    fetch_and_send_chart,
+    fetch_and_send_export,
+)
+from commands import (
+    ASK_ACCOUNT,
+    ACTION_BALANCE,
+    ACTION_INFO,
+    ACTION_STATS,
+    ACTION_SUMMARY,
+    ACTION_RECHARGE,
+    ACTION_MONTHLY,
+    ACTION_DAILY,
+    ACTION_CHART,
+    ACTION_EXPORT,
+    send_main_menu,
+    start,
+    settings_cmd,
+    help_command,
+    forget_command,
+    postpaid_cmd,
+    palli_cmd,
+    providers_cmd,
+    token_cmd,
+    other_cmd,
+    calc_cmd,
+    tariff_cmd,
+    ai_cmd,
+    bpdb_cmd,
+    nesco_cmd,
+    admin_cmd,
+    account_received,
+    cancel,
+    balance_cmd,
+    info_cmd,
+    stats_cmd,
+    summary_cmd,
+    recharge_cmd,
+    monthly_cmd,
+    daily_cmd,
+    chart_cmd,
+    export_cmd,
+)
 
 # =====================================
 # CONFIG
@@ -49,1354 +124,8 @@ load_dotenv()
 BOT_TOKEN   = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT        = int(os.getenv("PORT", 10000))
-ADMIN_ID    = int(os.getenv("ADMIN_ID", 0))
+ADMIN_ID    = int(os.getenv("ADMIN_ID", 0)) if os.getenv("ADMIN_ID") else None
 
-BASE_API = "https://prepaid.desco.org.bd/api"
-SYSTEMS  = ["unified", "tkdes"]
-
-# =====================================
-# CONVERSATION STATES
-# =====================================
-
-ASK_ACCOUNT = 0
-
-ACTION_BALANCE  = "balance"
-ACTION_INFO     = "info"
-ACTION_STATS    = "stats"
-ACTION_SUMMARY  = "summary"
-ACTION_RECHARGE = "recharge"
-ACTION_MONTHLY  = "monthly"
-ACTION_DAILY    = "daily"
-ACTION_CHART    = "chart"
-ACTION_EXPORT   = "export"
-
-BN_TO_EN_TRANS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
-
-def convert_bn_digits_to_en(text: str) -> str:
-    """Converts Bangla numeral digits (০-৯) to ASCII English digits (0-9)."""
-    if not text:
-        return ""
-    return text.translate(BN_TO_EN_TRANS).strip()
-
-# =====================================
-# DESCO API
-# =====================================
-
-def desco_get(system: str, endpoint: str, account_no: str,
-              meter_no: str = "", provider: str = "desco", **params) -> tuple:
-    """Returns (data, code, desc). Standardized for DESCO and BPDB APIs."""
-    return provider_get(provider, system, endpoint, account_no, meter_no, **params)
-
-
-def detect_system(user_input: str, provider: str = "desco") -> tuple:
-    """
-    Try user_input as accountNo then as meterNo across systems and providers.
-    Returns (system, account_no, meter_no, info_data, status)
-    status can be: "OK", "EMPTY_PREPAID", "NOT_FOUND"
-    """
-    user_input = convert_bn_digits_to_en(user_input)
-    combos = [
-        (user_input, ""),   # treat as account number
-        ("",   user_input),  # treat as meter number
-    ]
-
-    providers_to_check = [provider] if is_api_provider(provider) else ["desco"]
-    if "desco" not in providers_to_check and is_api_provider("desco"):
-        providers_to_check.append("desco")
-
-    found_empty_sys = None
-    for prov in providers_to_check:
-        systems = get_provider_systems(prov)
-        for system in systems:
-            for acc, met in combos:
-                try:
-                    # 1. Try getCustomerInfo
-                    data, code, _ = desco_get(system, "getCustomerInfo", acc, met, provider=prov)
-                    if data:
-                        account_no = data.get("accountNo") or acc or user_input
-                        meter_no   = data.get("meterNo")   or met or ""
-                        return system, account_no, meter_no, data, "OK"
-
-                    # 2. Try getBalance if info data was null
-                    bal_data, bal_code, _ = desco_get(system, "getBalance", acc, met, provider=prov)
-                    if bal_data:
-                        account_no = bal_data.get("accountNo") or acc or user_input
-                        meter_no   = bal_data.get("meterNo")   or met or ""
-                        return system, account_no, meter_no, None, "OK"
-                    elif bal_code == 200:
-                        found_empty_sys = system
-                except Exception:
-                    pass
-
-    if found_empty_sys:
-        return found_empty_sys, user_input, "", None, "EMPTY_PREPAID"
-
-    return None, None, None, None, "NOT_FOUND"
-
-# =====================================
-# TARIFF CALCULATOR (DESCO LT-A slabs)
-# =====================================
-
-LTA_SLABS = [
-    (50,          3.75),
-    (75,          5.14),
-    (200,         5.72),
-    (300,         6.01),
-    (400,         6.30),
-    (float("inf"), 10.70),
-]
-
-def estimate_bill(units: float) -> float:
-    charge, prev = 0.0, 0
-    for limit, rate in LTA_SLABS:
-        if units <= 0:
-            break
-        slab = min(units, limit - prev)
-        charge += slab * rate
-        units  -= slab
-        prev    = limit
-    return round(charge, 2)
-
-def estimate_units_from_taka(taka: float) -> float:
-    """Inverts the LT-A tariff formula to estimate exact consumption units (kWh) from a bill Taka amount."""
-    if taka <= 0:
-        return 0.0
-    if taka <= 187.50:
-        return taka / 3.75
-    elif taka <= 316.00:
-        return 50.0 + (taka - 187.50) / 5.14
-    elif taka <= 1031.00:
-        return 75.0 + (taka - 316.00) / 5.72
-    elif taka <= 1632.00:
-        return 200.0 + (taka - 1031.00) / 6.01
-    elif taka <= 2262.00:
-        return 300.0 + (taka - 1632.00) / 6.30
-    else:
-        return 400.0 + (taka - 2262.00) / 10.70
-
-# =====================================
-# DERIVED STATS HELPER
-# =====================================
-
-def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
-    today        = date.today()
-    days_elapsed = max(today.day, 1)
-    month_days   = 30
-    days_left    = max(month_days - days_elapsed, 0)
-
-    val = float(balance_data.get("currentMonthConsumption", 0))
-
-    # Auto-detect Taka vs Units: if val > 500 (e.g. 2097.10), treat val as Taka cost and invert for Units
-    if val > 500:
-        mo_taka  = val
-        mo_units = estimate_units_from_taka(mo_taka)
-    else:
-        mo_units = val
-        mo_taka  = estimate_bill(mo_units)
-
-    bal = float(balance_data.get("balance", 0))
-
-    daily_units_avg = round(mo_units / days_elapsed, 2) if days_elapsed else 0.0
-    daily_taka_avg  = round(mo_taka / days_elapsed, 2) if days_elapsed else 0.0
-
-    projected_units = round(daily_units_avg * month_days, 2)
-    projected_taka  = estimate_bill(projected_units)
-
-    days_bal = round(bal / daily_taka_avg, 1) if daily_taka_avg > 0 else "∞"
-
-    conn_age = load_pct = None
-    if info_data:
-        inst_str = info_data.get("installationDate")
-        if inst_str:
-            try:
-                inst   = date.fromisoformat(inst_str)
-                delta  = today - inst
-                years  = delta.days // 365
-                months = (delta.days % 365) // 30
-                conn_age = f"{years}y {months}m" if years else f"{months} months"
-            except ValueError:
-                pass
-        load_kw = info_data.get("sanctionLoad", 0)
-        if load_kw:
-            load_pct = round((daily_units_avg / 24) / load_kw * 100, 1)
-
-    return dict(
-        days_elapsed=days_elapsed, days_left=days_left,
-        mo_units=mo_units, mo_taka=mo_taka,
-        daily_units_avg=daily_units_avg, daily_taka_avg=daily_taka_avg,
-        projected_units=projected_units, projected_taka=projected_taka,
-        est_bill=projected_taka, days_bal_lasts=days_bal,
-        conn_age=conn_age, load_pct=load_pct,
-        # Backward compatibility aliases
-        daily_avg=daily_units_avg, projected_mo=projected_units,
-    )
-
-# =====================================
-# KEYBOARDS
-# =====================================
-
-def main_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(get_msg(lang, "balance_btn"), callback_data="balance"),
-            InlineKeyboardButton(get_msg(lang, "info_btn"),    callback_data="info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "stats_btn"),   callback_data="stats"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "summary_btn"), callback_data="summary"),
-            InlineKeyboardButton(get_msg(lang, "daily_btn"),   callback_data="daily"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "monthly_btn"),  callback_data="monthly"),
-            InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "export_btn"),    callback_data="export"),
-            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="select_provider"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "other_btn"),    callback_data="other_menu"),
-            InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
-        ],
-    ])
-
-def back_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def daily_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(get_msg(lang, "view_daily_chart"), callback_data="chart_daily")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),    callback_data="start")],
-    ])
-
-def monthly_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(get_msg(lang, "view_monthly_chart"), callback_data="chart_monthly")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),      callback_data="start")],
-    ])
-
-def chart_range_keyboard(lang: str = "en", days: int = 7):
-    btn_7  = "✅ 7 Days" if days == 7 else "7 Days"
-    btn_15 = "✅ 15 Days" if days == 15 else "15 Days"
-    btn_30 = "✅ 30 Days" if days == 30 else "30 Days"
-    btn_60 = "✅ 60 Days" if days == 60 else "60 Days"
-
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(btn_7,  callback_data="range_7"),
-            InlineKeyboardButton(btn_15, callback_data="range_15"),
-            InlineKeyboardButton(btn_30, callback_data="range_30"),
-            InlineKeyboardButton(btn_60, callback_data="range_60"),
-        ],
-        [
-            InlineKeyboardButton("📅 Specific Date", callback_data="range_date"),
-            InlineKeyboardButton("📆 Date-to-Date Range", callback_data="range_custom_dates"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start"),
-        ],
-    ])
-
-def export_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📊 CSV Excel Report", callback_data="export_csv"),
-            InlineKeyboardButton("📄 Visual Statement", callback_data="export_statement"),
-        ],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def recharge_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(get_msg(lang, "view_recharge_chart"), callback_data="chart_recharge")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),       callback_data="start")],
-    ])
-
-def postpaid_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📄 DESCO E-Bill Portal", url="https://ebill.desco.org.bd/")],
-        [InlineKeyboardButton("🌐 DESCO OCSMS Portal", url="https://ocsms.desco.org.bd/")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def palli_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔑 " + get_msg(lang, "token_btn"), callback_data="token_info")],
-        [InlineKeyboardButton("🌐 BREB Official Portal", url="http://www.reb.gov.bd/")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def bpdb_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌐 BPDB Prepaid Portal", url="https://prepaid.bpdb.gov.bd/")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def providers_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def settings_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
-            InlineKeyboardButton("🇧🇩 বাংলা",  callback_data="set_lang_bn"),
-        ],
-        [InlineKeyboardButton("⚡ Change Utility Provider", callback_data="select_provider")],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def other_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(get_msg(lang, "ai_btn"),     callback_data="ai_info"),
-            InlineKeyboardButton(get_msg(lang, "calc_btn"),   callback_data="calc_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "tariff_btn"), callback_data="tariff_info"),
-            InlineKeyboardButton(get_msg(lang, "palli_btn"),  callback_data="palli_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),      callback_data="bpdb_info"),
-            InlineKeyboardButton(get_msg(lang, "nesco_btn"),     callback_data="nesco_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "postpaid_btn"),  callback_data="postpaid_info"),
-            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "token_btn"),     callback_data="token_info"),
-        ],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def provider_selector_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⚡ DESCO (Dhaka North)",  callback_data="set_prov_desco"),
-            InlineKeyboardButton("🌾 Palli Bidyut (BREB)",   callback_data="set_prov_breb"),
-        ],
-        [
-            InlineKeyboardButton("🏢 BPDB (Chattogram)",    callback_data="set_prov_bpdb"),
-            InlineKeyboardButton("🌆 DPDC (Dhaka South)",    callback_data="set_prov_dpdc"),
-        ],
-        [
-            InlineKeyboardButton("🌊 WZPDCL (West Zone)",   callback_data="set_prov_wzpdcl"),
-            InlineKeyboardButton("❄️ NESCO (North Zone)",   callback_data="set_prov_nesco"),
-        ],
-        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
-    ])
-
-def get_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    lang = context.user_data.get("language")
-    if not lang:
-        user_id = update.effective_user.id if update and update.effective_user else 0
-        lang = get_user_language(user_id) if user_id else "en"
-        context.user_data["language"] = lang
-    return lang
-
-async def send_main_menu(send_fn, account_no=None, system=None, lang: str = "en"):
-    saved = f"\n\n💾 Account: `{account_no}` _{system}_" if account_no else ""
-    msg_text = get_msg(lang, "welcome", saved=saved)
-    await send_fn(
-        msg_text,
-        parse_mode="Markdown",
-        reply_markup=main_keyboard(lang),
-    )
-
-
-async def resolve_account(update, context, action):
-    """Return (account_no, system, meter_no) from session or ask user."""
-    account_no = context.user_data.get("account_no")
-    system     = context.user_data.get("system")
-    meter_no   = context.user_data.get("meter_no", "")
-    if account_no and system:
-        return account_no, system, meter_no
-    send = (update.message or update.callback_query.message).reply_text
-    await send(
-        "🔢 Enter your *account number* or *meter number*:\n\n"
-        "_Both are printed on your electricity bill or meter card._",
-        parse_mode="Markdown",
-    )
-    context.user_data["pending_action"] = action
-    return None, None, None
-
-# =====================================
-# COMMANDS — START & HELP
-# =====================================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/start")
-    lang = get_lang(update, context)
-    account_no = context.user_data.get("account_no")
-    system     = context.user_data.get("system")
-    await send_main_menu(update.message.reply_text, account_no, system, lang)
-
-
-async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/settings")
-    lang = get_lang(update, context)
-    msg_text = get_msg(lang, "settings_title")
-    await update.message.reply_text(
-        msg_text,
-        parse_mode="Markdown",
-        reply_markup=settings_keyboard(lang),
-    )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/help")
-    await update.message.reply_text(
-        "📖 *DESCO Info Bot — Help*\n\n"
-        "*Commands:*\n"
-        "• /start — Main menu\n"
-        "• /balance — Prepaid balance\n"
-        "• /info — Customer & meter details\n"
-        "• /stats — Usage stats & bill estimate\n"
-        "• /chart — Visual usage & trend charts\n"
-        "• /summary — Full summary\n"
-        "• /daily — Daily usage & cost breakdown\n"
-        "• /recharge — Last 12 months recharge history\n"
-        "• /monthly — Monthly consumption history\n"
-        "• /forget — Clear saved account\n"
-        "• /cancel — Cancel current action\n\n"
-        "*Supported systems:* `unified` and `tkdes`\n"
-        "The bot auto-detects which system your account is on.",
-        parse_mode="Markdown",
-        reply_markup=main_keyboard(),
-    )
-
-
-async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    await update.message.reply_text(
-        "🗑 Saved account cleared.",
-        reply_markup=main_keyboard(),
-    )
-
-
-async def postpaid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/postpaid")
-    await update.message.reply_text(
-        "📄 *DESCO Postpaid Electricity Bill Check*\n\n"
-        "If you are a DESCO Postpaid customer (monthly bill user), access your bill through:\n\n"
-        "1️⃣ *DESCO E-Bill Portal:* Download PDF monthly bill\n"
-        "2️⃣ *bKash App:* Pay Bill → Electricity (Postpaid) → DESCO → Enter Account No.\n"
-        "3️⃣ *Nagad App:* Bill Pay → DESCO Postpaid\n"
-        "4️⃣ *Rocket App:* Utility Pay → DESCO Postpaid",
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=postpaid_keyboard(),
-    )
-
-
-async def palli_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/palli")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_palli_text(lang),
-        parse_mode="Markdown",
-        reply_markup=palli_keyboard(lang),
-    )
-
-
-async def provider_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/provider")
-    lang = get_lang(update, context)
-    msg_text = get_msg(lang, "provider_title")
-    await update.message.reply_text(
-        msg_text,
-        parse_mode="Markdown",
-        reply_markup=provider_selector_keyboard(lang),
-    )
-
-
-async def token_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/token")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_token_help_text(lang),
-        parse_mode="Markdown",
-        reply_markup=back_keyboard(lang),
-    )
-
-
-async def other_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/other")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_msg(lang, "other_title"),
-        parse_mode="Markdown",
-        reply_markup=other_keyboard(lang),
-    )
-
-
-async def calc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/calc")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_calc_text(lang),
-        parse_mode="Markdown",
-        reply_markup=back_keyboard(lang),
-    )
-
-
-async def tariff_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/tariff")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_tariff_guide_text(lang),
-        parse_mode="Markdown",
-        reply_markup=back_keyboard(lang),
-    )
-
-
-async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/ask")
-    lang = get_lang(update, context)
-    context.user_data["pending_action"] = "ask_ai"
-    await update.message.reply_text(
-        "🤖 *AI Smart Assistant*\n\n"
-        "Ask me any question in English or Bangla about your electricity bill, meter codes, or tariff rates!\n\n"
-        "_(Example: `এসি বেশি চালালে বিল কমানোর উপায় কি?` or `How do I check balance on Hexing meter?`)_\n\n"
-        "Type your question below (or /cancel to return):",
-        parse_mode="Markdown",
-    )
-    return ASK_ACCOUNT
-
-
-async def bpdb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/bpdb")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_bpdb_text(lang),
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=bpdb_keyboard(lang),
-    )
-
-
-async def nesco_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/nesco")
-    lang = get_lang(update, context)
-    await update.message.reply_text(
-        get_nesco_text(lang),
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=back_keyboard(lang),
-    )
-
-
-async def providers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    track_user(update.effective_user, "/providers")
-    lang = get_lang(update, context)
-    msg_text = (
-        "⚡ *Select Electricity Provider / বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান*\n\n"
-        "Choose your electricity distribution company from the 6 providers below to check balance, usage, and monthly bills:\n\n"
-        "1️⃣ *DESCO* — Dhaka North, Uttara, Gulshan, Mirpur, Tongi\n"
-        "2️⃣ *BPDB* — Chattogram, Sylhet, Mymensingh, Comilla\n"
-        "3️⃣ *DPDC* — Dhaka South, Dhanmondi, Narayanganj\n"
-        "4️⃣ *Palli Bidyut (BREB)* — Rural Subdivisions & Unions\n"
-        "5️⃣ *WZPDCL* — Khulna, Barishal, Faridpur\n"
-        "6️⃣ *NESCO* — Rajshahi, Rangpur, Bogura"
-        if lang == "en"
-        else "⚡ *বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান নির্বাচন করুন*\n\nব্যালেন্স, ব্যবহার এবং বিল দেখার জন্য নিচে দেওয়া ৬টি বিদ্যুৎ বিতরণ কোম্পানির মধ্যে থেকে আপনার প্রতিষ্ঠান নির্বাচন করুন:"
-    )
-    await update.message.reply_text(
-        msg_text,
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=provider_selector_keyboard(lang),
-    )
-
-provider_cmd = providers_cmd
-provides_cmd = providers_cmd
-
-# =====================================
-# ACCOUNT NUMBER COLLECTION
-# =====================================
-
-async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    raw_text   = update.message.text.strip() if update.message and update.message.text else ""
-    user_input = convert_bn_digits_to_en(raw_text)
-    msg_target = update.effective_message or (update.callback_query.message if update.callback_query else None)
-    send       = msg_target.reply_text if msg_target else update.message.reply_text
-
-    pending = context.user_data.get("pending_action")
-    account_no = context.user_data.get("account_no")
-    system     = context.user_data.get("system", "unified")
-    meter_no   = context.user_data.get("meter_no", "")
-
-    if pending == "ask_ai":
-        context.user_data.pop("pending_action", None)
-        await send("🤖 Thinking...")
-        lang = get_lang(update, context)
-        account_no = context.user_data.get("account_no", "")
-        system     = context.user_data.get("system", "unified")
-        meter_no   = context.user_data.get("meter_no", "")
-        ctx_data   = {"provider": context.user_data.get("provider", "DESCO"), "account_no": account_no}
-        raw_reply  = query_ai_assistant(user_input, context_data=ctx_data, lang=lang)
-        clean_text, intent = extract_ai_intent(raw_reply)
-
-        kb_map = {
-            "chart": chart_range_keyboard(lang),
-            "daily": daily_keyboard(lang),
-            "monthly": monthly_keyboard(lang),
-            "recharge": recharge_keyboard(lang),
-            "calc": back_keyboard(lang),
-            "tariff": back_keyboard(lang),
-            "stats": main_keyboard(lang),
-            "summary": main_keyboard(lang),
-            "balance": main_keyboard(lang),
-        }
-        reply_kb = kb_map.get(intent, main_keyboard(lang))
-        await send(clean_text, parse_mode="Markdown", reply_markup=reply_kb)
-
-        # Automatic Command Triggering if account is saved and intent matched
-        if account_no and intent:
-            dispatch_fn = {
-                "balance":  fetch_and_send_balance,
-                "info":     fetch_and_send_info,
-                "stats":    fetch_and_send_stats,
-                "chart":    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
-                "summary":  fetch_and_send_summary,
-                "recharge": fetch_and_send_recharge,
-                "monthly":  fetch_and_send_monthly,
-                "daily":    fetch_and_send_daily,
-                "export":   fetch_and_send_export,
-            }.get(intent)
-            if dispatch_fn:
-                await dispatch_fn(send, account_no, system, meter_no, context)
-
-        return ConversationHandler.END
-
-    if pending in ["date_lookup", "date_range_lookup"] or " to " in user_input.lower() or " - " in user_input:
-        if account_no and system:
-            context.user_data.pop("pending_action", None)
-            if " to " in user_input.lower() or " - " in user_input or pending == "date_range_lookup":
-                parts = user_input.lower().replace(" to ", " - ").split(" - ")
-                if len(parts) >= 2:
-                    s_date = parts[0].strip()
-                    e_date = parts[1].strip()
-                    await send(f"🔍 Searching usage for date range `{s_date}` to `{e_date}`...", parse_mode="Markdown")
-                    await lookup_date_range(send, account_no, system, meter_no, s_date, e_date, context, update=update)
-                    return ConversationHandler.END
-            await send("🔍 Searching date records...")
-            await lookup_specific_date(send, account_no, system, meter_no, user_input, context)
-            return ConversationHandler.END
-
-    if not user_input.isdigit():
-        await send(
-            "❌ *Invalid.* Enter digits only (account or meter number), or /cancel.",
-            parse_mode="Markdown",
-        )
-        return ASK_ACCOUNT
-
-    prov = context.user_data.get("provider", "desco")
-
-    if not is_api_provider(prov):
-        context.user_data["account_no"] = user_input
-        context.user_data["system"]     = "portal"
-        context.user_data["meter_no"]   = ""
-        track_user(update.effective_user, "account_submit_portal", user_input)
-
-        p_name = PROVIDERS.get(prov, {}).get("name", prov.upper())
-        await send(
-            f"✅ Account `{user_input}` saved for *{p_name}*",
-            parse_mode="Markdown",
-        )
-        action = context.user_data.pop("pending_action", ACTION_BALANCE)
-        dispatch = {
-            ACTION_BALANCE:  fetch_and_send_balance,
-            ACTION_INFO:     fetch_and_send_info,
-            ACTION_STATS:    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
-            ACTION_SUMMARY:  fetch_and_send_summary,
-            ACTION_RECHARGE: fetch_and_send_recharge,
-            ACTION_MONTHLY:  fetch_and_send_monthly,
-            ACTION_DAILY:    fetch_and_send_daily,
-            ACTION_EXPORT:   fetch_and_send_export,
-            ACTION_CHART:    lambda send, acc, sys, met, ctx: fetch_and_send_chart(send, acc, sys, met, ctx, update=update),
-        }
-        if action in dispatch:
-            await dispatch[action](send, user_input, "portal", "", context)
-        else:
-            lang = get_lang(update, context)
-            msg_text, markup = get_non_desco_reply(prov, lang, account_no=user_input)
-            await send(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return ConversationHandler.END
-
-    await send("🔍 Detecting account...")
-    system, account_no, meter_no, info_data, status = detect_system(user_input, provider=prov)
-
-    if status == "EMPTY_PREPAID":
-        context.user_data["account_no"] = user_input
-        context.user_data["system"]     = system
-        context.user_data["meter_no"]   = ""
-        track_user(update.effective_user, "account_submit_empty", user_input)
-        await send(
-            f"⚠️ *Prepaid Account Recognized (`{system}` system)*\n\n"
-            f"🔑 Account: `{user_input}`\n\n"
-            "This account is registered on DESCO's prepaid system, but DESCO currently has no meter balance or consumption data synced for it yet.\n\n"
-            "_(This typically occurs for newly installed smart meters or accounts undergoing DESCO server sync)._",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(),
-        )
-        return ConversationHandler.END
-
-    if status == "NOT_FOUND" or not system:
-        if len(user_input) == 8:
-            await send(
-                f"ℹ️ Account `{user_input}` is not active on Prepaid.\n\n"
-                "If this is a Postpaid connection, check your bill via:\n\n"
-                "📄 *DESCO E-Bill Portal:* [ebill.desco.org.bd](https://ebill.desco.org.bd/)\n"
-                "🌐 *DESCO OCSMS:* [ocsms.desco.org.bd](https://ocsms.desco.org.bd/)\n"
-                "📱 *bKash:* Pay Bill → Electricity (Postpaid) → DESCO",
-                parse_mode="Markdown",
-                disable_web_page_preview=True,
-                reply_markup=postpaid_keyboard(),
-            )
-        else:
-            p_name = PROVIDERS.get(prov, {}).get("name", "electricity provider")
-            await send(
-                f"❌ *Not found on {p_name} servers.*\n\n"
-                "Please double-check your account number or meter number.",
-                parse_mode="Markdown",
-                reply_markup=back_keyboard(),
-            )
-        return ConversationHandler.END
-
-    context.user_data["account_no"] = account_no
-    context.user_data["system"]     = system
-    context.user_data["meter_no"]   = meter_no
-
-    track_user(update.effective_user, "account_submit", account_no)
-
-    await send(
-        f"✅ Found on *{system}* system\n"
-        f"🔑 Account: `{account_no}`\n"
-        f"🔌 Meter: `{meter_no}`",
-        parse_mode="Markdown",
-    )
-
-    action = context.user_data.pop("pending_action", ACTION_BALANCE)
-    dispatch = {
-        ACTION_BALANCE:  fetch_and_send_balance,
-        ACTION_INFO:     fetch_and_send_info,
-        ACTION_STATS:    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
-        ACTION_SUMMARY:  fetch_and_send_summary,
-        ACTION_RECHARGE: fetch_and_send_recharge,
-        ACTION_MONTHLY:  fetch_and_send_monthly,
-    }
-    await dispatch[action](send, account_no, system, meter_no, context)
-    return ConversationHandler.END
-
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.pop("pending_action", None)
-    await update.message.reply_text("❌ Cancelled.", reply_markup=main_keyboard())
-    return ConversationHandler.END
-
-# =====================================
-# FETCH FUNCTIONS
-# =====================================
-
-def get_non_desco_reply(prov: str, lang: str, account_no: str = ""):
-    acc_str = f"\n\n🔑 *Saved Account:* `{account_no}`" if account_no else ""
-    if prov == "breb":
-        return get_palli_text(lang) + acc_str, palli_keyboard(lang)
-    elif prov == "bpdb":
-        return get_bpdb_text(lang) + acc_str, bpdb_keyboard(lang)
-    elif prov == "nesco":
-        return get_nesco_text(lang) + acc_str, back_keyboard(lang)
-    else:
-        return get_all_coverage_text(lang) + acc_str, main_keyboard(lang)
-
-async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching balance...")
-    try:
-        data, code, desc = desco_get(system, "getBalance", account_no, meter_no, provider=prov)
-        if not data:
-            msg = ("⚠️ *Account found but no balance data.*"
-                   if code == 200 else f"❌ *{desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-        bal_val = float(data.get('balance', 0))
-        raw_val = float(data.get('currentMonthConsumption', 0))
-        if raw_val > 500:
-            mo_taka  = raw_val
-            mo_units = estimate_units_from_taka(mo_taka)
-        else:
-            mo_units = raw_val
-            mo_taka  = estimate_bill(mo_units)
-
-        lang = get_lang(None, context)
-        warn_banner = get_low_balance_warning(bal_val, daily_avg=mo_units/30, lang=lang)
-
-        await send_fn(
-            f"⚡ *Prepaid Balance Info*\n\n"
-            f"🔑 Account: `{account_no}` _{system}_\n"
-            f"💵 *Prepaid Balance:* *৳{bal_val:.2f}*\n"
-            f"⚡ *This Month Usage:* `{mo_units:.2f} kWh` (*৳{mo_taka:.2f}*)\n"
-            f"🔌 Meter: `{data.get('meterNo', 'N/A')}`\n"
-            f"🕒 Last Reading: `{data.get('readingTime', 'N/A')}`"
-            f"{warn_banner}",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(lang),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching customer info...")
-    try:
-        data, code, desc = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
-        if not data:
-            msg = ("⚠️ *Account found but no info available.*"
-                   if code == 200 else f"❌ *{desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-        await send_fn(
-            f"👤 *Customer Info*\n\n"
-            f"🔑 Account: `{account_no}` _{system}_\n"
-            f"👤 Name: *{data.get('customerName', 'N/A')}*\n"
-            f"📞 Phone: `{data.get('contactNo', 'N/A')}`\n"
-            f"📍 Address: {data.get('installationAddress', 'N/A')}\n\n"
-            f"⚡ *Meter Details*\n"
-            f"🔌 Meter: `{data.get('meterNo', 'N/A')}`\n"
-            f"📦 Model: `{data.get('meterModel', 'N/A')}`\n"
-            f"📅 Installed: `{data.get('installationDate', 'N/A')}`\n"
-            f"🔧 Phase: `{data.get('phaseType', 'N/A')}` | Load: `{data.get('sanctionLoad', 'N/A')} kW`\n\n"
-            f"🏗 *Supply Info*\n"
-            f"🌐 Feeder: `{data.get('feederName', 'N/A')}`\n"
-            f"🏢 Sub-Division: `{data.get('SDName', 'N/A')}`\n"
-            f"🔄 Transformer: `{data.get('transformer', 'N/A')}`\n"
-            f"📋 Tariff: `{data.get('tariffSolution', 'N/A')}`",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, update: Update = None):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    # Resolve the best available message object for sending photos
-    msg_target = None
-    if update:
-        msg_target = update.effective_message
-    # Fallback: extract message from send_fn if it's a bound method of a Message
-    if not msg_target and hasattr(send_fn, "__self__"):
-        obj = send_fn.__self__
-        if hasattr(obj, "reply_photo"):
-            msg_target = obj
-
-    await send_fn("⏳ Processing stats & generating visual dashboard...")
-
-    try:
-        today = date.today()
-        bal_data,  bal_code,  bal_desc  = desco_get(system, "getBalance",      account_no, meter_no, provider=prov)
-        info_data, info_code, info_desc = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
-        
-        date_from = (today - timedelta(days=65)).strftime("%Y-%m-%d")
-        date_to   = today.strftime("%Y-%m-%d")
-        daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
-
-        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
-        month_to   = today.strftime("%Y-%m")
-        monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
-
-        if not bal_data:
-            msg = ("⚠️ No balance data." if bal_code == 200 else f"❌ *{bal_desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-
-        s = calc_stats(bal_data, info_data)
-        load_line = f"🔌 Sanctioned load: `{info_data.get('sanctionLoad','N/A')} kW` (Peak load: ~{s['load_pct']}%)\n" if s["load_pct"] else ""
-        lang = get_lang(update, context) if update else "en"
-        
-        slab_warning = get_tariff_slab_warning(s['mo_units'], s['projected_units'], s['days_elapsed'], s['days_left'], lang=lang)
-
-        caption_text = (
-            f"📊 *Usage Statistics & Analytics Dashboard*\n\n"
-            f"🔑 Account: `{account_no}` _{system}_\n"
-            f"⚡ *Month Consumption:* `{s['mo_units']:.2f} kWh` (*৳{s['mo_taka']:.2f}*)\n"
-            f"📉 *Daily Avg:* `{s['daily_units_avg']:.2f} kWh/day` (~৳{s['daily_taka_avg']:.2f}/day)\n"
-            f"🔮 *Projected Month:* `{s['projected_units']:.2f} kWh` (~৳{s['projected_taka']:.2f})\n"
-            f"💵 *Prepaid Balance:* *৳{bal_data.get('balance', 0)}* (lasts ~`{s['days_bal_lasts']} days`)\n"
-            f"{load_line}{slab_warning}"
-        )
-
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7, stats=s)
-
-        if buf and msg_target:
-            await msg_target.reply_photo(
-                photo=buf,
-                caption=caption_text,
-                parse_mode="Markdown",
-                reply_markup=chart_range_keyboard(lang, days=7),
-            )
-        elif buf:
-            # send_fn cannot send photos — send text stats + note about chart
-            await send_fn(
-                caption_text + "\n\n_📊 Open Stats & Dashboard from the menu to see the visual chart._",
-                parse_mode="Markdown",
-                reply_markup=chart_range_keyboard(lang, days=7),
-            )
-        else:
-            await send_fn(caption_text, parse_mode="Markdown", reply_markup=chart_range_keyboard(lang, days=7))
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Stats & Dashboard", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching full summary...")
-    try:
-        bal_data,  _, _  = desco_get(system, "getBalance",      account_no, meter_no, provider=prov)
-        info_data, _, _  = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
-        if not bal_data or not info_data:
-            await send_fn("⚠️ Incomplete data returned.", reply_markup=back_keyboard())
-            return
-        s = calc_stats(bal_data, info_data)
-        conn_line = f"🏗 Connection age: `{s['conn_age']}`\n" if s["conn_age"] else ""
-        lang = get_lang(None, context)
-        slab_warning = get_tariff_slab_warning(s['mo_units'], s['projected_units'], s['days_elapsed'], s['days_left'], lang=lang)
-        await send_fn(
-            f"📋 *Full Account Summary*\n\n"
-            f"👤 *{info_data.get('customerName','N/A')}*\n"
-            f"🔑 Account: `{account_no}` _{system}_\n"
-            f"📍 {info_data.get('installationAddress','N/A')}\n\n"
-            f"💰 *Balance & Consumption*\n"
-            f"💵 Balance: *৳{bal_data.get('balance',0)}*\n"
-            f"⚡ This Month: `{s['mo_units']:.2f} kWh` (*৳{s['mo_taka']:.2f}*)\n"
-            f"📉 Daily Avg: `{s['daily_units_avg']:.2f} kWh/day` (~৳{s['daily_taka_avg']:.2f}/day)\n"
-            f"🔮 Projected Month: `{s['projected_units']:.2f} kWh` (*~৳{s['projected_taka']:.2f}*)\n"
-            f"🕐 Balance lasts ~`{s['days_bal_lasts']} days`\n\n"
-            f"🔌 *Meter & Connection*\n"
-            f"🔌 Meter: `{info_data.get('meterNo','N/A')}` | "
-            f"{info_data.get('phaseType','N/A')} | "
-            f"`{info_data.get('sanctionLoad','N/A')} kW`\n"
-            f"🌐 Feeder: `{info_data.get('feederName','N/A')}`\n"
-            f"📋 Tariff: `{info_data.get('tariffSolution','N/A')}`\n"
-            f"{conn_line}"
-            f"{slab_warning}",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(lang),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching recharge history...")
-    try:
-        today     = date.today()
-        date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
-        date_to   = today.strftime("%Y-%m-%d")
-        data, code, desc = desco_get(
-            system, "getRechargeHistory", account_no, meter_no, provider=prov,
-            dateFrom=date_from, dateTo=date_to,
-        )
-        if not data:
-            msg = ("⚠️ No recharge history found." if code == 200 else f"❌ *{desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-        records = data if isinstance(data, list) else [data]
-        lines   = []
-        for r in records[:15]:  # max 15 entries
-            dt  = r.get("rechargeDate") or r.get("date", "N/A")
-            amt = r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount", "N/A")
-            tok = r.get("tokenNo", "")
-            line = f"📆 `{dt}` — *৳{amt}*"
-            if tok:
-                line += f"\n   🔑 Token: `{tok}`"
-            lines.append(line)
-        await send_fn(
-            f"💳 *Recharge History* (last 12 months)\n"
-            f"🔑 Account: `{account_no}` _{system}_\n\n"
-            + "\n\n".join(lines),
-            parse_mode="Markdown",
-            reply_markup=recharge_keyboard(),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching monthly consumption...")
-    try:
-        today      = date.today()
-        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
-        month_to   = today.strftime("%Y-%m")
-        data, code, desc = desco_get(
-            system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov,
-            monthFrom=month_from, monthTo=month_to,
-        )
-        if not data:
-            msg = ("⚠️ No consumption history found." if code == 200 else f"❌ *{desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-        records = data if isinstance(data, list) else [data]
-        records = sorted(records, key=lambda x: str(x.get("month", "")), reverse=True)
-        lines   = []
-        for r in records[:12]:
-            month = r.get("month") or r.get("readingMonth", "N/A")
-            units = r.get("consumedUnit") or r.get("consumption") or r.get("unit", "0")
-            taka  = r.get("consumedTaka") or r.get("amount") or r.get("billAmount", "0")
-            line  = f"📅 `{month}` — `{float(units):.2f} Unit` | *৳{float(taka):.2f}*"
-            lines.append(line)
-        await send_fn(
-            f"📊 *Monthly Consumption* (last 12 months)\n"
-            f"🔑 Account: `{account_no}` _{system}_\n\n"
-            + "\n".join(lines),
-            parse_mode="Markdown",
-            reply_markup=monthly_keyboard(),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-
-async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    if not is_api_provider(prov):
-        lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn("⏳ Fetching daily usage & cost breakdown...")
-    try:
-        today = date.today()
-        # Fetch current month (from 1st of month to today)
-        date_from = today.replace(day=1).strftime("%Y-%m-%d")
-        date_to   = today.strftime("%Y-%m-%d")
-        data, code, desc = desco_get(
-            system, "getCustomerDailyConsumption", account_no, meter_no,
-            dateFrom=date_from, dateTo=date_to,
-        )
-        if not data or len(data) < 2:
-            # Fallback to last 30 days
-            date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-            data, code, desc = desco_get(
-                system, "getCustomerDailyConsumption", account_no, meter_no,
-                dateFrom=date_from, dateTo=date_to,
-            )
-
-        if not data:
-            msg = ("⚠️ No daily consumption history found." if code == 200 else f"❌ *{desc}*")
-            await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
-            return
-
-        records = data if isinstance(data, list) else [data]
-        records = sorted(records, key=lambda x: str(x.get("date", "")))
-
-        lines = []
-        for i in range(1, len(records)):
-            prev_rec = records[i-1]
-            curr_rec = records[i]
-            d_str    = curr_rec.get("date", "N/A")
-
-            u_curr  = float(curr_rec.get("consumedUnit") or 0)
-            u_prev  = float(prev_rec.get("consumedUnit") or 0)
-            u_delta = max(u_curr - u_prev, 0)
-
-            t_curr  = float(curr_rec.get("consumedTaka") or 0)
-            t_prev  = float(prev_rec.get("consumedTaka") or 0)
-            t_delta = max(t_curr - t_prev, 0)
-
-            rate = (t_delta / u_delta) if u_delta > 0 else 0
-
-            lines.append(
-                f"📆 `{d_str}` — `{u_delta:.2f} Unit` | *৳{t_delta:.2f}* `(@৳{rate:.2f}/u)`"
-            )
-
-        if not lines and records:
-            r = records[0]
-            lines.append(f"📆 `{r.get('date')}` — `{float(r.get('consumedUnit',0)):.2f} Unit` | *৳{float(r.get('consumedTaka',0)):.2f}*")
-
-        lines.reverse()
-
-        await send_fn(
-            f"📆 *Daily Usage & Cost Breakdown*\n"
-            f"🔑 Account: `{account_no}` _{system}_\n\n"
-            + "\n".join(lines[:25]),
-            parse_mode="Markdown",
-            reply_markup=daily_keyboard(),
-        )
-    except Exception as e:
-        lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
-
-async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None, days: int = 7):
-    msg_target = update.effective_message if update else None
-    if msg_target:
-        await msg_target.reply_text(f"⏳ Generating visual analytics chart ({days} Days)...")
-    else:
-        await send_fn(f"⏳ Generating visual analytics chart ({days} Days)...")
-
-    try:
-        today = date.today()
-
-        # 1. Fetch daily data for up to 60 days
-        date_from = (today - timedelta(days=max(days + 10, 65))).strftime("%Y-%m-%d")
-        date_to   = today.strftime("%Y-%m-%d")
-        prov = context.user_data.get("provider", "desco")
-        daily_data, _, _ = desco_get(
-            system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov,
-            dateFrom=date_from, dateTo=date_to,
-        )
-
-        # 2. Fetch monthly data
-        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
-        month_to   = today.strftime("%Y-%m")
-        monthly_data, _, _ = desco_get(
-            system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov,
-            monthFrom=month_from, monthTo=month_to,
-        )
-
-        # 3. Fetch balance data for KPI card
-        bal_data, _, _ = desco_get(system, "getBalance", account_no, meter_no, provider=prov)
-
-        # 4. Render executive chart with days filter
-        lang = get_lang(update, context) if update else "en"
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=days)
-
-        # 5. Send photo with timeline range keyboard
-        if msg_target:
-            await msg_target.reply_photo(
-                photo=buf,
-                caption=f"📈 *DESCO Analytics Dashboard ({days} Days)*\n🔑 Account: `{account_no}` _{system}_",
-                parse_mode="Markdown",
-                reply_markup=chart_range_keyboard(lang, days=days),
-            )
-        else:
-            await send_fn("📈 Chart generated.", reply_markup=chart_range_keyboard(lang, days=days))
-
-    except Exception as e:
-        await send_fn(f"❌ Error generating chart: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
-
-
-async def lookup_specific_date(send_fn, account_no, system, meter_no, target_date_str, context):
-    today = date.today()
-    date_from = (today - timedelta(days=65)).strftime("%Y-%m-%d")
-    date_to   = today.strftime("%Y-%m-%d")
-    prov = context.user_data.get("provider", "desco")
-    daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
-
-    if not daily_data or len(daily_data) < 2:
-        await send_fn("⚠️ No daily usage data available for date lookup.", reply_markup=back_keyboard())
-        return
-
-    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
-    match_rec = None
-    prev_rec = None
-
-    for i in range(1, len(sorted_daily)):
-        curr_d = str(sorted_daily[i].get("date", ""))
-        if target_date_str in curr_d:
-            match_rec = sorted_daily[i]
-            prev_rec  = sorted_daily[i-1]
-            break
-
-    if not match_rec:
-        await send_fn(f"❌ No consumption record found for date `{target_date_str}`.\n\nPlease check that the date is within the last 60 days.", parse_mode="Markdown", reply_markup=back_keyboard())
-        return
-
-    u_curr = float(match_rec.get("consumedUnit") or 0)
-    u_prev = float(prev_rec.get("consumedUnit") or 0) if prev_rec else 0
-    units  = max(u_curr - u_prev, 0)
-
-    t_curr = float(match_rec.get("consumedTaka") or 0)
-    t_prev = float(prev_rec.get("consumedTaka") or 0) if prev_rec else 0
-    taka   = max(t_curr - t_prev, 0)
-    rate   = taka / units if units > 0 else 0
-
-    await send_fn(
-        f"📅 *Specific Date Usage Info — {match_rec.get('date', target_date_str)}*\n\n"
-        f"🔑 Account: `{account_no}` _{system}_\n"
-        f"⚡ *Consumed Units:* `{units:.2f} kWh`\n"
-        f"💰 *Daily Cost:* *৳{taka:.2f}*\n"
-        f"📊 *Effective Unit Rate:* `@৳{rate:.2f} / kWh`\n"
-        f"🔌 Meter: `{meter_no}`\n"
-        f"🕒 Meter Reading Date: `{match_rec.get('date', 'N/A')}`",
-        parse_mode="Markdown",
-        reply_markup=main_keyboard(),
-    )
-
-
-async def lookup_date_range(send_fn, account_no, system, meter_no, start_date_str, end_date_str, context, update: Update = None):
-    today = date.today()
-    date_from = (today - timedelta(days=90)).strftime("%Y-%m-%d")
-    date_to   = today.strftime("%Y-%m-%d")
-    prov = context.user_data.get("provider", "desco")
-    daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
-
-    if not daily_data or len(daily_data) < 2:
-        await send_fn("⚠️ No daily usage data available for range lookup.", reply_markup=back_keyboard())
-        return
-
-    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
-    filtered = []
-
-    for i in range(1, len(sorted_daily)):
-        curr_d = str(sorted_daily[i].get("date", ""))
-        if start_date_str <= curr_d[-len(start_date_str):] and curr_d[-len(end_date_str):] <= end_date_str:
-            u_curr = float(sorted_daily[i].get("consumedUnit") or 0)
-            u_prev = float(sorted_daily[i-1].get("consumedUnit") or 0)
-            units  = max(u_curr - u_prev, 0)
-
-            t_curr = float(sorted_daily[i].get("consumedTaka") or 0)
-            t_prev = float(sorted_daily[i-1].get("consumedTaka") or 0)
-            taka   = max(t_curr - t_prev, 0)
-
-            filtered.append({"date": curr_d, "units": round(units, 2), "taka": round(taka, 2)})
-
-    if not filtered:
-        await send_fn(f"❌ No records found between `{start_date_str}` and `{end_date_str}`.\n\nPlease check dates and try again.", parse_mode="Markdown", reply_markup=back_keyboard())
-        return
-
-    total_units = sum(r["units"] for r in filtered)
-    total_taka  = sum(r["taka"] for r in filtered)
-    num_days    = len(filtered)
-    avg_units   = total_units / num_days if num_days > 0 else 0
-    avg_taka    = total_taka / num_days if num_days > 0 else 0
-    avg_rate    = total_taka / total_units if total_units > 0 else 0
-
-    lang = get_lang(update, context) if update else "en"
-    buf  = generate_custom_date_range_chart(filtered, account_no, system, start_date_str, end_date_str, lang=lang)
-
-    summary_text = (
-        f"📅 *Custom Date Range Usage Summary*\n"
-        f"🗓 *Range:* `{start_date_str}` to `{end_date_str}` ({num_days} Days)\n"
-        f"🔑 Account: `{account_no}` _{system}_\n\n"
-        f"⚡ *Total Units Consumed:* `{total_units:.2f} kWh`\n"
-        f"💰 *Total Cost:* *৳{total_taka:.2f}*\n"
-        f"📉 *Daily Average:* `{avg_units:.2f} kWh/day` (~৳{avg_taka:.2f}/day)\n"
-        f"📊 *Effective Avg Rate:* `@৳{avg_rate:.2f} / kWh`"
-    )
-
-    msg_target = update.effective_message if update else None
-    if buf and msg_target:
-        await msg_target.reply_photo(
-            photo=buf,
-            caption=summary_text,
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(lang),
-        )
-    else:
-        await send_fn(summary_text, parse_mode="Markdown", reply_markup=main_keyboard(lang))
-
-async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
-    prov = context.user_data.get("provider", "desco")
-    lang = get_lang(None, context)
-    if not is_api_provider(prov):
-        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
-        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
-        return
-
-    await send_fn(
-        "📥 *Utility Report & Financial Statement*\n\n"
-        "Select your preferred report format below:",
-        parse_mode="Markdown",
-        reply_markup=export_keyboard(lang),
-    )
-
-# =====================================
-# COMMAND ENTRY POINTS
-# =====================================
-
-async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    send = update.message.reply_text
-    account_no, system, meter_no = await resolve_account(update, context, action)
-    track_user(update.effective_user, f"/{action}", account_no or "")
-    if not account_no:
-        return ASK_ACCOUNT
-    dispatch = {
-        ACTION_BALANCE:  fetch_and_send_balance,
-        ACTION_INFO:     fetch_and_send_info,
-        ACTION_STATS:    lambda send_fn, acc, sys, met, ctx: fetch_and_send_stats(send_fn, acc, sys, met, ctx, update=update),
-        ACTION_SUMMARY:  fetch_and_send_summary,
-        ACTION_RECHARGE: fetch_and_send_recharge,
-        ACTION_MONTHLY:  fetch_and_send_monthly,
-        ACTION_DAILY:    fetch_and_send_daily,
-        ACTION_EXPORT:   fetch_and_send_export,
-        ACTION_CHART:    lambda send_fn, acc, sys, met, ctx: fetch_and_send_chart(send_fn, acc, sys, met, ctx, update=update),
-    }
-    await dispatch[action](send, account_no, system, meter_no, context)
-    return ConversationHandler.END
-
-async def balance_cmd(u, c):  return await _cmd(ACTION_BALANCE,  u, c)
-async def info_cmd(u, c):     return await _cmd(ACTION_INFO,     u, c)
-async def stats_cmd(u, c):    return await _cmd(ACTION_STATS,    u, c)
-async def summary_cmd(u, c):  return await _cmd(ACTION_SUMMARY,  u, c)
-async def recharge_cmd(u, c): return await _cmd(ACTION_RECHARGE, u, c)
-async def monthly_cmd(u, c):  return await _cmd(ACTION_MONTHLY,  u, c)
-async def daily_cmd(u, c):    return await _cmd(ACTION_DAILY,    u, c)
-async def chart_cmd(u, c):    return await _cmd(ACTION_CHART,    u, c)
-async def export_cmd(u, c):   return await _cmd(ACTION_EXPORT,   u, c)
-async def nesco_cmd(u, c):    return await _cmd(ACTION_NESCO,    u, c)
 
 # =====================================
 # INLINE BUTTON HANDLER
@@ -1418,6 +147,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         system     = context.user_data.get("system")
         await send_main_menu(send, account_no, system, lang)
         return ConversationHandler.END
+
+    if data == "settings":
+        lang = get_lang(update, context)
+        msg_text = get_msg(lang, "settings_title")
+        await send(
+            msg_text,
+            parse_mode="Markdown",
+            reply_markup=settings_keyboard(lang),
+        )
+        return
+
+    if data == "nesco_info":
+        lang = get_lang(update, context)
+        await send(
+            get_nesco_text(lang),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+            reply_markup=back_keyboard(lang),
+        )
+        return
 
     if data == "select_provider":
         lang = get_lang(update, context)
@@ -1801,36 +550,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ASK_ACCOUNT
 
 # =====================================
-# ADMIN COMMAND
-# =====================================
-
-async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if ADMIN_ID and user_id != ADMIN_ID:
-        # Completely silent for non-admin users
-        return
-
-    track_user(update.effective_user, "/admin")
-    stats = get_admin_stats()
-
-    users_list = []
-    for u in stats["recent_users"]:
-        name = u["first_name"] or u["username"] or str(u["user_id"])
-        users_list.append(f"• `{u['user_id']}` ({name}) — {u['request_count']} reqs")
-
-    recent_str = "\n".join(users_list) if users_list else "None"
-
-    await update.message.reply_text(
-        f"📊 *DESCO Bot Usage Statistics*\n\n"
-        f"👥 *Total Unique Users:* `{stats['total_users']}`\n"
-        f"🔥 *Active Today:* `{stats['active_today']}`\n"
-        f"📆 *Active Past 7 Days:* `{stats['active_week']}`\n"
-        f"⚡ *Total Requests Processed:* `{stats['total_requests']}`\n\n"
-        f"👤 *Recent Active Users:*\n{recent_str}",
-        parse_mode="Markdown"
-    )
-
-# =====================================
 # REGISTER BOT COMMANDS
 # =====================================
 
@@ -1863,9 +582,6 @@ async def setup_commands(app):
         BotCommand("cancel",   "❌ Cancel"),
     ])
 
-    # Admin-only command menu (shows /admin only to ADMIN_ID)
-    # Note: This requires the admin to have already started a chat with the bot.
-    # On fresh deployments, the first attempt may fail with "Chat not found" — that's normal.
     if ADMIN_ID:
         try:
             await app.bot.set_my_commands(
@@ -1933,7 +649,6 @@ def main():
         ("chart",    chart_cmd),
         ("export",   export_cmd),
     ]
-    ALL_ACTIONS = "|".join(a for a, _ in CMDS)
 
     conv = ConversationHandler(
         entry_points=[

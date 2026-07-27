@@ -107,7 +107,7 @@ def set_user_provider(user_id: int, provider: str):
 def get_user_provider(user_id: int) -> str:
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT provider FROM users WHERE user_id = ?", (provider, user_id))
+        cursor.execute("SELECT provider FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         return row["provider"] if row and row["provider"] else "desco"
 
