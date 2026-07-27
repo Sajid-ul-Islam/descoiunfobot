@@ -27,7 +27,7 @@ from chart_gen import generate_daily_chart, generate_monthly_chart, generate_rec
 from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_nesco_text, get_all_coverage_text
-from providers_adapter import provider_get
+from providers_adapter import provider_get, is_api_provider, get_provider_systems, PROVIDERS
 from tariff_tips import get_tariff_tip, get_low_balance_warning
 from report_gen import generate_csv_report
 from appliance_calc import get_calc_text, get_tariff_guide_text
@@ -84,11 +84,13 @@ def detect_system(user_input: str, provider: str = "desco") -> tuple:
         ("",   user_input),  # treat as meter number
     ]
 
-    providers_to_check = [provider] + [p for p in ["desco", "bpdb"] if p != provider]
+    providers_to_check = [provider] if is_api_provider(provider) else ["desco"]
+    if "desco" not in providers_to_check and is_api_provider("desco"):
+        providers_to_check.append("desco")
 
     found_empty_sys = None
     for prov in providers_to_check:
-        systems = ["unified", "tkdes"] if prov == "desco" else ["unified"]
+        systems = get_provider_systems(prov)
         for system in systems:
             for acc, met in combos:
                 try:
@@ -617,8 +619,9 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=postpaid_keyboard(),
             )
         else:
+            p_name = PROVIDERS.get(prov, {}).get("name", "electricity provider")
             await send(
-                "❌ *Not found on DESCO servers.*\n\n"
+                f"❌ *Not found on {p_name} servers.*\n\n"
                 "Please double-check your account number or meter number.",
                 parse_mode="Markdown",
                 reply_markup=back_keyboard(),
@@ -660,11 +663,22 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # FETCH FUNCTIONS
 # =====================================
 
+def get_non_desco_reply(prov: str, lang: str):
+    if prov == "breb":
+        return get_palli_text(lang), palli_keyboard(lang)
+    elif prov == "bpdb":
+        return get_bpdb_text(lang), bpdb_keyboard(lang)
+    elif prov == "nesco":
+        return get_nesco_text(lang), back_keyboard(lang)
+    else:
+        return get_all_coverage_text(lang), main_keyboard(lang)
+
 async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching balance...")
@@ -697,9 +711,10 @@ async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context)
 
 async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching customer info...")
@@ -735,9 +750,10 @@ async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
 
 async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Calculating stats...")
@@ -780,9 +796,10 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
 
 async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching full summary...")
@@ -822,9 +839,10 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
 
 async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching recharge history...")
@@ -863,9 +881,10 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
 
 async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching monthly consumption...")
@@ -903,9 +922,10 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
 
 async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
+    if not is_api_provider(prov):
         lang = get_lang(None, context)
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn("⏳ Fetching daily usage & cost breakdown...")
@@ -1132,8 +1152,9 @@ async def lookup_date_range(send_fn, account_no, system, meter_no, start_date_st
 async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     lang = get_lang(None, context)
-    if prov in ["breb", "dpdc", "wzpdcl", "nesco"]:
-        await send_fn(get_palli_text(lang) if prov == "breb" else get_all_coverage_text(lang), parse_mode="Markdown", reply_markup=main_keyboard(lang))
+    if not is_api_provider(prov):
+        msg_text, markup = get_non_desco_reply(prov, lang)
+        await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
     await send_fn(get_msg(lang, "exporting"))

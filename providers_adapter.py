@@ -15,9 +15,8 @@ PROVIDERS = {
     },
     "bpdb": {
         "name": "BPDB (Chattogram & Zones)",
-        "type": "api",
-        "systems": ["unified"],
-        "base_url": "https://prepaid.bpdb.gov.bd/api",
+        "type": "portal",
+        "portal_url": "https://billonweb.bpdb.gov.bd/",
     },
     "dpdc": {
         "name": "DPDC (Dhaka South)",
@@ -42,15 +41,21 @@ PROVIDERS = {
     }
 }
 
-def provider_get(provider_id: str, system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
-    """
-    Standardized provider API call. Returns (data, code, desc).
-    """
-    p_info = PROVIDERS.get(provider_id, PROVIDERS["desco"])
-    if p_info.get("type") != "api":
-        return None, 400, "Provider uses web portal or USSD gateway"
 
-    base_url = p_info["base_url"]
+def is_api_provider(provider_id: str) -> bool:
+    """Returns True if the provider supports direct API queries."""
+    p_info = PROVIDERS.get(provider_id)
+    return p_info.get("type") == "api" if p_info else False
+
+
+def get_provider_systems(provider_id: str) -> list:
+    """Returns supported system identifiers for the given provider."""
+    p_info = PROVIDERS.get(provider_id, {})
+    return p_info.get("systems", ["unified"])
+
+
+def _desco_get(system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
+    base_url = PROVIDERS["desco"]["base_url"]
     url = f"{base_url}/{system}/customer/{endpoint}"
 
     params = {}
@@ -69,3 +74,21 @@ def provider_get(provider_id: str, system: str, endpoint: str, account_no: str =
         return data, code, desc
     except Exception as e:
         return None, 500, str(e)
+
+
+def provider_get(provider_id: str, system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
+    """
+    Standardized provider API call. Returns (data, code, desc).
+    Dispatches to provider-specific adapters while guaranteeing standard dictionary structures.
+    """
+    p_info = PROVIDERS.get(provider_id, PROVIDERS["desco"])
+    p_type = p_info.get("type")
+
+    if p_type != "api":
+        return None, 400, f"{p_info.get('name', 'Provider')} uses web portal or USSD gateway"
+
+    if provider_id == "desco":
+        return _desco_get(system, endpoint, account_no, meter_no, **extra_params)
+
+    # Modular hooks for future API adapters can be added here
+    return None, 400, f"Live API adapter for {provider_id} not configured"
