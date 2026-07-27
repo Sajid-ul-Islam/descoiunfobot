@@ -552,12 +552,27 @@ async def nesco_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def providers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update.effective_user, "/providers")
     lang = get_lang(update, context)
+    msg_text = (
+        "⚡ *Select Electricity Provider / বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান*\n\n"
+        "Choose your electricity distribution company from the 6 providers below to check balance, usage, and monthly bills:\n\n"
+        "1️⃣ *DESCO* — Dhaka North, Uttara, Gulshan, Mirpur, Tongi\n"
+        "2️⃣ *BPDB* — Chattogram, Sylhet, Mymensingh, Comilla\n"
+        "3️⃣ *DPDC* — Dhaka South, Dhanmondi, Narayanganj\n"
+        "4️⃣ *Palli Bidyut (BREB)* — Rural Subdivisions & Unions\n"
+        "5️⃣ *WZPDCL* — Khulna, Barishal, Faridpur\n"
+        "6️⃣ *NESCO* — Rajshahi, Rangpur, Bogura"
+        if lang == "en"
+        else "⚡ *বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান নির্বাচন করুন*\n\nব্যালেন্স, ব্যবহার এবং বিল দেখার জন্য নিচে দেওয়া ৬টি বিদ্যুৎ বিতরণ কোম্পানির মধ্যে থেকে আপনার প্রতিষ্ঠান নির্বাচন করুন:"
+    )
     await update.message.reply_text(
-        get_all_coverage_text(lang),
+        msg_text,
         parse_mode="Markdown",
         disable_web_page_preview=True,
-        reply_markup=providers_keyboard(lang),
+        reply_markup=provider_selector_keyboard(lang),
     )
+
+provider_cmd = providers_cmd
+provides_cmd = providers_cmd
 
 # =====================================
 # ACCOUNT NUMBER COLLECTION
@@ -1826,11 +1841,14 @@ def main():
         allow_reentry=True,
     )
 
+    app.add_handler(conv)
     app.add_handler(CommandHandler("start",    start))
     app.add_handler(CommandHandler("help",     help_command))
     app.add_handler(CommandHandler("forget",   forget_command))
     app.add_handler(CommandHandler("settings", settings_cmd))
-    app.add_handler(CommandHandler("provider", provider_cmd))
+    app.add_handler(CommandHandler("provider", providers_cmd))
+    app.add_handler(CommandHandler("providers",providers_cmd))
+    app.add_handler(CommandHandler("provides", providers_cmd))
     app.add_handler(CommandHandler("other",    other_cmd))
     app.add_handler(CommandHandler("calc",     calc_cmd))
     app.add_handler(CommandHandler("tariff",   tariff_cmd))
@@ -1841,10 +1859,7 @@ def main():
     app.add_handler(CommandHandler("bpdb",     bpdb_cmd))
     app.add_handler(CommandHandler("nesco",    nesco_cmd))
     app.add_handler(CommandHandler("token",    token_cmd))
-    app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|ai_info|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|export_csv|export_statement|range_7|range_15|range_30|range_60|range_date|range_custom_dates)$"))
-    app.add_handler(conv)
     app.post_init = setup_commands
 
     print("DESCO Info Running (webhook)...")
