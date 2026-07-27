@@ -906,11 +906,17 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
-    msg_target = update.effective_message if update else None
-    if msg_target:
-        await msg_target.reply_text("⏳ Processing stats & generating visual dashboard...")
-    else:
-        await send_fn("⏳ Processing stats & generating visual dashboard...")
+    # Resolve the best available message object for sending photos
+    msg_target = None
+    if update:
+        msg_target = update.effective_message
+    # Fallback: extract message from send_fn if it's a bound method of a Message
+    if not msg_target and hasattr(send_fn, "__self__"):
+        obj = send_fn.__self__
+        if hasattr(obj, "reply_photo"):
+            msg_target = obj
+
+    await send_fn("⏳ Processing stats & generating visual dashboard...")
 
     try:
         today = date.today()
@@ -952,6 +958,13 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
             await msg_target.reply_photo(
                 photo=buf,
                 caption=caption_text,
+                parse_mode="Markdown",
+                reply_markup=chart_range_keyboard(lang, days=7),
+            )
+        elif buf:
+            # send_fn cannot send photos — send text stats + note about chart
+            await send_fn(
+                caption_text + "\n\n_📊 Open Stats & Dashboard from the menu to see the visual chart._",
                 parse_mode="Markdown",
                 reply_markup=chart_range_keyboard(lang, days=7),
             )
