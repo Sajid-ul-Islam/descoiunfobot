@@ -54,6 +54,11 @@ def get_provider_systems(provider_id: str) -> list:
     return p_info.get("systems", ["unified"])
 
 
+import time
+
+_CACHE = {}
+_CACHE_TTL = 30  # seconds
+
 def _desco_get(system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
     base_url = PROVIDERS["desco"]["base_url"]
     url = f"{base_url}/{system}/customer/{endpoint}"
@@ -65,15 +70,40 @@ def _desco_get(system: str, endpoint: str, account_no: str = "", meter_no: str =
         params["meterNo"] = meter_no
     params.update(extra_params)
 
-    try:
-        r = requests.get(url, params=params, timeout=12, verify=False)
-        raw = r.json()
-        data = raw.get("data")
-        code = raw.get("code", 0)
-        desc = raw.get("desc", "Unknown response")
-        return data, code, desc
-    except Exception as e:
-        return None, 500, str(e)
+    # Check cache
+    cache_key = (system, endpoint, account_no, meter_no, tuple(sorted(params.items())))
+    now = time.time()
+    if cache_key in _CACHE:
+        cached_time, cached_result = _CACHE[cache_key]
+        if now - cached_time < _CACHE_TTL:
+            return cached_result
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            r = requests.get(url, params=params, timeout=12, verify=False)
+            if r.status_code == 429:
+                time.sleep(1.5)
+                continue
+            raw = r.json()
+            data = raw.get("data")
+            code = raw.get("code", 0)
+            desc = raw.get("desc", "Unknown response")
+
+            if "simpleRateLimit" in str(desc) or code == 429:
+                time.sleep(1.5)
+                continue
+
+            result = (data, code, desc)
+            if data is not None and code == 200:
+                _CACHE[cache_key] = (now, result)
+            return result
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return None, 500, str(e)
+            time.sleep(1.0)
+
+    return None, 429, "DESCO server rate limit reached ('simpleRateLimit'). Please wait 10 seconds before trying again."
 
 
 def provider_get(provider_id: str, system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
