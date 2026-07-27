@@ -210,11 +210,14 @@ def main_keyboard(lang: str = "en"):
             InlineKeyboardButton(get_msg(lang, "recharge_btn"), callback_data="recharge"),
         ],
         [
-            InlineKeyboardButton(get_msg(lang, "export_btn"),   callback_data="export"),
-            InlineKeyboardButton(get_msg(lang, "other_btn"),    callback_data="other_menu"),
+            InlineKeyboardButton(get_msg(lang, "export_btn"),    callback_data="export"),
+            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="select_provider"),
         ],
         [
+            InlineKeyboardButton(get_msg(lang, "other_btn"),    callback_data="other_menu"),
             InlineKeyboardButton(get_msg(lang, "settings_btn"), callback_data="settings"),
+        ],
+        [
             InlineKeyboardButton(get_msg(lang, "help_btn"),     callback_data="help"),
         ],
     ])
