@@ -632,7 +632,11 @@ async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYP
         try:
             await update.effective_message.reply_text(reply, parse_mode="Markdown", reply_markup=main_keyboard(lang))
         except Exception:
-            pass
+            try:
+                # Fallback without parse_mode if Markdown parsing fails
+                await update.effective_message.reply_text(reply.replace("*", "").replace("_", "").replace("`", ""), reply_markup=main_keyboard(lang))
+            except Exception:
+                pass
 
 def main():
     init_db()

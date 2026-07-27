@@ -67,9 +67,9 @@ def get_tariff_slab_warning(mo_use: float, projected_mo: float, days_elapsed: in
             return (
                 f"\n\n🚨 *SMART TARIFF WARNING (400 kWh Threshold)*\n"
                 f"At your current run-rate, your projected month-end usage will hit *{projected_mo:.1f} kWh*. "
-                f"Crossing 400 units shifts extra units to the maximum **৳10.70/unit** tariff (+70% jump)!\n\n"
+                f"Crossing 400 units shifts extra units to the maximum *৳10.70/unit* tariff (+70% jump)!\n\n"
                 f"💡 *Money Saving Target:* Reduce daily usage by `{reduction:.1f} kWh/day` (target: `{target_daily:.1f} kWh/day`) "
-                f"to stay under 400 units and save **~৳{extra_cost:.0f}** this month!"
+                f"to stay under 400 units and save *~৳{extra_cost:.0f}* this month!"
             )
 
     # 2. Warning for crossing 300 kWh (Slab 5 Jump to ৳6.30/unit)
@@ -90,7 +90,7 @@ def get_tariff_slab_warning(mo_use: float, projected_mo: float, days_elapsed: in
             return (
                 f"\n\n⚠️ *TARIFF WARNING (300 kWh Threshold)*\n"
                 f"Projected month-end usage: *{projected_mo:.1f} kWh*. "
-                f"Reduce daily usage by `{reduction:.1f} kWh/day` to stay under 300 units and save **~৳{extra_cost:.0f}**!"
+                f"Reduce daily usage by `{reduction:.1f} kWh/day` to stay under 300 units and save *~৳{extra_cost:.0f}*!"
             )
 
     return ""

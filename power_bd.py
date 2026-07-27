@@ -62,7 +62,7 @@ def get_all_coverage_text(lang: str = "en") -> str:
             lines.append(
                 f"*{p['name_bn']}*\n"
                 f"📍 *কভারেজ:* {p['coverage_bn']}\n"
-                f"📞 *হটলাইন:* **{p['helpline']}**\n"
+                f"📞 *হটলাইন:* *{p['helpline']}*\n"
                 f"🌐 *ওয়েবসাইট:* [পোর্টাল দেখুন]({p['portal']})\n"
             )
         return "\n".join(lines)
@@ -75,7 +75,7 @@ def get_all_coverage_text(lang: str = "en") -> str:
             lines.append(
                 f"*{p['name_en']}*\n"
                 f"📍 *Coverage:* {p['coverage_en']}\n"
-                f"📞 *Hotline:* **{p['helpline']}**\n"
+                f"📞 *Hotline:* *{p['helpline']}*\n"
                 f"🌐 *Portal:* [Visit Portal]({p['portal']})\n"
             )
         return "\n".join(lines)
@@ -88,7 +88,7 @@ def get_bpdb_text(lang: str = "en") -> str:
             f"📍 *কভারেজ:* {p['coverage_bn']}\n"
             "• বিপিডিবি সরাসরি এসব এলাকায় বিদ্যুৎ সরবরাহ বিষয়াবলী পরিচালনা করে।\n\n"
             f"🌐 *প্রিপেইড পোর্টাল:* [prepaid.bpdb.gov.bd]({p['portal']})\n"
-            f"📞 *হেল্পলাইন:* **{p['helpline']}**\n\n"
+            f"📞 *হেল্পলাইন:* *{p['helpline']}*\n\n"
             "📱 *মোবাইল পেমেন্ট:* বিকাশ / নগদ → পে বিল → বিপিডিবি"
         )
     return (
@@ -96,7 +96,7 @@ def get_bpdb_text(lang: str = "en") -> str:
         f"📍 *Coverage:* {p['coverage_en']}\n"
         "• BPDB directly manages retail electricity distribution to homes and commercial spaces.\n\n"
         f"🌐 *Prepaid Portal:* [prepaid.bpdb.gov.bd]({p['portal']})\n"
-        f"📞 *Helpline:* **{p['helpline']}**\n\n"
+        f"📞 *Helpline:* *{p['helpline']}*\n\n"
         "📱 *MFS Bill Pay:* bKash / Nagad → Pay Bill → BPDB"
     )
 
@@ -108,7 +108,7 @@ def get_nesco_text(lang: str = "en") -> str:
             f"📍 *কভারেজ:* {p['coverage_bn']}\n"
             "• নেসকো (নর্দার্ন ইলেকট্রিসিটি সাপ্লাই কোম্পানি) রাজশাহী ও রংপুর বিভাগে বিদ্যুৎ সরবরাহ করে।\n\n"
             f"🌐 *গ্রাহক পোর্টাল:* [nesco.gov.bd]({p['portal']})\n"
-            f"📞 *২৪/৭ হেল্পলাইন:* **{p['helpline']}**\n\n"
+            f"📞 *২৪/৭ হেল্পলাইন:* *{p['helpline']}*\n\n"
             "📱 *অনলাইন রিচার্জ:* বিকাশ / নগদ → পে বিল → নেসকো প্রিপেইড / পোস্টপেইড"
         )
     return (
@@ -116,6 +116,6 @@ def get_nesco_text(lang: str = "en") -> str:
         f"📍 *Coverage:* {p['coverage_en']}\n"
         "• Northern Electricity Supply Company PLC (NESCO) distributes power across Rajshahi & Rangpur divisions.\n\n"
         f"🌐 *Customer Portal:* [nesco.gov.bd]({p['portal']})\n"
-        f"📞 *24/7 Helpline:* **{p['helpline']}**\n\n"
+        f"📞 *24/7 Helpline:* *{p['helpline']}*\n\n"
         "📱 *MFS Recharge:* bKash / Nagad → Pay Bill → NESCO Prepaid / Postpaid"
     )

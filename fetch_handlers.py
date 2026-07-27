@@ -195,25 +195,44 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
         buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7, stats=s)
 
         if buf and msg_target:
-            await msg_target.reply_photo(
-                photo=buf,
-                caption=caption_text,
-                parse_mode="Markdown",
-                reply_markup=chart_range_keyboard(lang, days=7),
-            )
+            try:
+                await msg_target.reply_photo(
+                    photo=buf,
+                    caption=caption_text,
+                    parse_mode="Markdown",
+                    reply_markup=chart_range_keyboard(lang, days=7),
+                )
+            except Exception as pe:
+                # If Markdown entity parsing fails, retry without parse_mode
+                await msg_target.reply_photo(
+                    photo=buf,
+                    caption=caption_text.replace("*", "").replace("_", "").replace("`", ""),
+                    reply_markup=chart_range_keyboard(lang, days=7),
+                )
         elif buf:
-            # send_fn cannot send photos — send text stats + note about chart
-            await send_fn(
-                caption_text + "\n\n_📊 Open Stats & Dashboard from the menu to see the visual chart._",
-                parse_mode="Markdown",
-                reply_markup=chart_range_keyboard(lang, days=7),
-            )
+            try:
+                await send_fn(
+                    caption_text + "\n\n_📊 Open Stats & Dashboard from the menu to see the visual chart._",
+                    parse_mode="Markdown",
+                    reply_markup=chart_range_keyboard(lang, days=7),
+                )
+            except Exception:
+                await send_fn(
+                    caption_text.replace("*", "").replace("_", "").replace("`", "") + "\n\n📊 Open Stats & Dashboard from the menu to see the visual chart.",
+                    reply_markup=chart_range_keyboard(lang, days=7),
+                )
         else:
-            await send_fn(caption_text, parse_mode="Markdown", reply_markup=chart_range_keyboard(lang, days=7))
+            try:
+                await send_fn(caption_text, parse_mode="Markdown", reply_markup=chart_range_keyboard(lang, days=7))
+            except Exception:
+                await send_fn(caption_text.replace("*", "").replace("_", "").replace("`", ""), reply_markup=chart_range_keyboard(lang, days=7))
     except Exception as e:
         lang = get_lang(None, context)
         err_msg = generate_ai_error_explanation(str(e), action_name="Stats & Dashboard", provider=prov, lang=lang)
-        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
+        try:
+            await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
+        except Exception:
+            await send_fn(err_msg.replace("*", "").replace("_", "").replace("`", ""), reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context):
