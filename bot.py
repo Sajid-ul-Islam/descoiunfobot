@@ -1321,8 +1321,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "nesco": "NESCO (North Zone)",
         }
         name = prov_names.get(prov_code, prov_code.upper())
+        context.user_data["pending_action"] = ACTION_BALANCE
         await send(
-            get_msg(lang, "provider_prompt", name=name),
+            f"⚡ *Provider set to {name}*\n\n"
+            "🔢 Enter your *account number* or *meter number*:\n\n"
+            "_(Both are printed on your electricity bill or meter card. Type /cancel to return)_",
             parse_mode="Markdown",
         )
         return ASK_ACCOUNT
