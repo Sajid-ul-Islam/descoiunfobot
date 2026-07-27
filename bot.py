@@ -509,7 +509,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(update, context)
     context.user_data["pending_action"] = "ask_ai"
     await update.message.reply_text(
-        "🤖 *EnergyBuddy AI Smart Assistant*\n\n"
+        "🤖 *AI Smart Assistant*\n\n"
         "Ask me any question in English or Bangla about your electricity bill, meter codes, or tariff rates!\n\n"
         "_(Example: `এসি বেশি চালালে বিল কমানোর উপায় কি?` or `How do I check balance on Hexing meter?`)_\n\n"
         "Type your question below (or /cancel to return):",
@@ -1366,7 +1366,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = get_lang(update, context)
         context.user_data["pending_action"] = "ask_ai"
         await send(
-            "🤖 *EnergyBuddy AI Smart Assistant*\n\n"
+            "🤖 *AI Smart Assistant*\n\n"
             "Ask me any question in English or Bangla about your electricity bill, meter codes, or tariff rates!\n\n"
             "_(Example: `এসি বেশি চালালে বিল কমানোর উপায় কি?` or `How do I check balance on Hexing meter?`)_\n\n"
             "Type your question below (or /cancel to return):",
