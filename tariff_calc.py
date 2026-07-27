@@ -164,3 +164,146 @@ def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
         # Backward compatibility aliases
         daily_avg=daily_units_avg, projected_mo=projected_units,
     )
+
+
+# =====================================
+# RECHARGE PATTERN ANALYTICS ENGINE
+# =====================================
+
+EN_TO_BN_TRANS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
+
+def to_bn_digits(val) -> str:
+    return str(val).translate(EN_TO_BN_TRANS)
+
+def analyze_recharge_pattern(recharge_data: list, lang: str = "en") -> dict:
+    """
+    Analyzes recharge history to detect:
+    1. Average days between recharges
+    2. Average recharge amount
+    3. Most probable recharge day range of month (e.g. 1st–5th)
+    4. Most probable day of week (e.g. Friday)
+    5. Estimated next recharge date & days remaining
+    """
+    from datetime import timedelta
+    from collections import Counter
+
+    if not recharge_data:
+        return {"has_pattern": False, "formatted_text": ""}
+
+    records = recharge_data if isinstance(recharge_data, list) else [recharge_data]
+    parsed = []
+
+    for r in records:
+        raw_dt = str(r.get("rechargeDate") or r.get("date", "") or "").strip()
+        amt = float(r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount") or 0)
+        if not raw_dt:
+            continue
+        dt_part = raw_dt[:10]
+        try:
+            d_obj = date.fromisoformat(dt_part)
+            parsed.append({"date": d_obj, "amount": amt, "raw_dt": raw_dt})
+        except ValueError:
+            pass
+
+    if not parsed:
+        return {"has_pattern": False, "formatted_text": ""}
+
+    parsed.sort(key=lambda x: x["date"])
+    dates = [p["date"] for p in parsed]
+    amounts = [p["amount"] for p in parsed if p["amount"] > 0]
+
+    total_recharges = len(parsed)
+    total_spent = sum(amounts)
+    avg_amount = round(total_spent / len(amounts), 0) if amounts else 0.0
+
+    unique_dates = sorted(list(set(dates)))
+    gaps = [(unique_dates[i] - unique_dates[i-1]).days for i in range(1, len(unique_dates))]
+    valid_gaps = [g for g in gaps if g > 0]
+    avg_days_between = round(sum(valid_gaps) / len(valid_gaps), 1) if valid_gaps else 0.0
+
+    day_brackets_en = {
+        "1st–5th": 0, "6th–10th": 0, "11th–15th": 0,
+        "16th–20th": 0, "21st–25th": 0, "26th–31st": 0
+    }
+    day_brackets_bn = {
+        "১ম–৫ম": 0, "৬ষ্ঠ–১০ম": 0, "১১শ–১৫শ": 0,
+        "১৬শ–২০শ": 0, "২১শ–২৫শ": 0, "২৬শ–৩১শ": 0
+    }
+
+    weekdays = []
+    weekday_names_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_names_bn = ["সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার", "রবিবার"]
+
+    for d in dates:
+        day_num = d.day
+        weekdays.append(d.weekday())
+
+        if 1 <= day_num <= 5:
+            day_brackets_en["1st–5th"] += 1
+            day_brackets_bn["১ম–৫ম"] += 1
+        elif 6 <= day_num <= 10:
+            day_brackets_en["6th–10th"] += 1
+            day_brackets_bn["৬ষ্ঠ–১০ম"] += 1
+        elif 11 <= day_num <= 15:
+            day_brackets_en["11th–15th"] += 1
+            day_brackets_bn["১১শ–১৫শ"] += 1
+        elif 16 <= day_num <= 20:
+            day_brackets_en["16th–20th"] += 1
+            day_brackets_bn["১৬শ–২০শ"] += 1
+        elif 21 <= day_num <= 25:
+            day_brackets_en["21st–25th"] += 1
+            day_brackets_bn["২১শ–২৫শ"] += 1
+        else:
+            day_brackets_en["26th–31st"] += 1
+            day_brackets_bn["২৬শ–৩১শ"] += 1
+
+    top_bracket_en = max(day_brackets_en.items(), key=lambda x: x[1])[0]
+    top_bracket_bn = max(day_brackets_bn.items(), key=lambda x: x[1])[0]
+
+    weekday_counts = Counter(weekdays)
+    most_common_wd_idx = weekday_counts.most_common(1)[0][0] if weekday_counts else 4
+    wd_en = weekday_names_en[most_common_wd_idx]
+    wd_bn = weekday_names_bn[most_common_wd_idx]
+
+    last_date = dates[-1]
+    today = date.today()
+    predicted_next_date = last_date + timedelta(days=max(int(round(avg_days_between)), 1)) if avg_days_between > 0 else today + timedelta(days=15)
+    days_remaining = (predicted_next_date - today).days
+
+    EN = (lang == "en")
+    if EN:
+        freq_str = f"Every ~`{avg_days_between} days`" if avg_days_between > 0 else f"`{total_recharges} times` total"
+        rem_str = f"(~`{days_remaining} days` remaining)" if days_remaining > 0 else ("(*Today!*)" if days_remaining == 0 else f"(`{abs(days_remaining)} days` overdue)")
+        formatted_text = (
+            f"📊 *Recharge Pattern & Analytics:*\n"
+            f"• 🔁 *Top-up Frequency:* {freq_str} (Avg: `৳{avg_amount:,.0f}`)\n"
+            f"• 📅 *Most Common Period:* `{top_bracket_en}` of the month ({wd_en}s)\n"
+            f"• 🔮 *Predicted Next Top-up:* `{predicted_next_date.strftime('%Y-%m-%d')}` {rem_str}"
+        )
+    else:
+        avg_days_bn = to_bn_digits(avg_days_between)
+        avg_amt_bn = to_bn_digits(f"{avg_amount:,.0f}")
+        pred_date_bn = to_bn_digits(predicted_next_date.strftime('%Y-%m-%d'))
+        rem_days_bn = to_bn_digits(abs(days_remaining))
+
+        freq_str = f"প্রতি ~`{avg_days_bn} দিন` পর" if avg_days_between > 0 else f"মোট `{to_bn_digits(total_recharges)} বার`"
+        rem_str = f"(আনুমানিক ~`{rem_days_bn} দিন` বাকি)" if days_remaining > 0 else ("(*আজকে!*)" if days_remaining == 0 else f"(`{rem_days_bn} দিন` অতিবাহিত)")
+        formatted_text = (
+            f"📊 *রিচার্জ প্যাটার্ন ও বিশ্লেষণ:*\n"
+            f"• 🔁 *রিচার্জের সময়সীমা:* {freq_str} (গড় পরিমাণ: `৳{avg_amt_bn}`)\n"
+            f"• 📅 *সবচেয়ে সম্ভাব্য সময়:* মাসের `{top_bracket_bn}` তারিখ ({wd_bn})\n"
+            f"• 🔮 *পরবর্তী সম্ভাব্য রিচার্জ:* `{pred_date_bn}` {rem_str}"
+        )
+
+    return {
+        "has_pattern": True,
+        "total_recharges": total_recharges,
+        "total_spent": total_spent,
+        "avg_amount": avg_amount,
+        "avg_days_between": avg_days_between,
+        "top_bracket": top_bracket_en if EN else top_bracket_bn,
+        "most_common_weekday": wd_en if EN else wd_bn,
+        "predicted_next_date": str(predicted_next_date),
+        "days_remaining": days_remaining,
+        "formatted_text": formatted_text,
+    }

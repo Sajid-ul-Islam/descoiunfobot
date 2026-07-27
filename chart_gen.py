@@ -192,7 +192,9 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
 
 
 def generate_recharge_chart(recharge_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
-    """Generates a Plotly PNG bar chart for recharge history."""
+    """Generates a Plotly PNG bar chart for recharge history with pattern insights."""
+    from tariff_calc import analyze_recharge_pattern
+
     if not recharge_data:
         return None
 
@@ -207,6 +209,8 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
         amt = float(r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount") or 0)
         dates.append(dt)
         amts.append(amt)
+
+    pattern = analyze_recharge_pattern(recharge_data, lang=lang)
 
     fig = go.Figure()
 
@@ -227,26 +231,48 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
         )
     )
 
+    if pattern and pattern.get("avg_amount", 0) > 0:
+        avg_amt = pattern["avg_amount"]
+        fig.add_hline(
+            y=avg_amt,
+            line_dash="dash",
+            line_color="#f9e2af",
+            line_width=1.5,
+            annotation_text=f"avg ৳{avg_amt:,.0f}",
+            annotation_font=dict(color="#f9e2af", size=9, family=FONT_FAMILY),
+        )
+
+    EN = (lang == "en")
+    sub_info = ""
+    if pattern and pattern.get("has_pattern"):
+        avg_d = pattern.get("avg_days_between", 0)
+        top_b = pattern.get("top_bracket", "")
+        wd = pattern.get("most_common_weekday", "")
+        if EN:
+            sub_info = f"<br><span style='font-size:11px;color:#a6adc8'>Frequency: Every ~{avg_d} days | Peak Period: {top_b} ({wd}s)</span>"
+        else:
+            sub_info = f"<br><span style='font-size:11px;color:#a6adc8'>সময়সীমা: প্রতি ~{avg_d} দিন পর | সম্ভাব্য সময়: {top_b} ({wd})</span>"
+
     title_text = (
-        f"💳 Recharge History — Account: {account_no} ({system})"
-        if lang == "en"
-        else f"💳 রিচার্জের ইতিহাস — অ্যাকাউন্ট: {account_no} ({system})"
+        f"💳 Recharge History & Pattern — Account: {account_no} ({system}){sub_info}"
+        if EN
+        else f"💳 রিচার্জের ইতিহাস ও বিশ্লেষণ — অ্যাকাউন্ট: {account_no} ({system}){sub_info}"
     )
 
     fig.update_layout(
         title=dict(
             text=title_text,
-            font=dict(size=15, color="#cdd6f4", family=FONT_FAMILY),
+            font=dict(size=14, color="#cdd6f4", family=FONT_FAMILY),
             x=0.02,
         ),
         paper_bgcolor="#11111b",
         plot_bgcolor="#181825",
         font=dict(color="#a6adc8", family=FONT_FAMILY),
-        margin=dict(l=40, r=40, t=60, b=40),
+        margin=dict(l=40, r=40, t=65, b=40),
         xaxis=dict(type="category", title="Recharge Date" if lang == "en" else "রিচার্জের তারিখ", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis=dict(title="Amount (৳)" if lang == "en" else "টাকা (৳)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         width=850,
-        height=480,
+        height=500,
     )
 
     try:

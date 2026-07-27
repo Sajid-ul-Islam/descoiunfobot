@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from db import get_user_language
-from tariff_calc import desco_get, calc_stats, estimate_bill, estimate_units_from_taka
+from tariff_calc import desco_get, calc_stats, estimate_bill, estimate_units_from_taka, analyze_recharge_pattern
 from keyboards import (
     main_keyboard,
     back_keyboard,
@@ -271,7 +271,7 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
-    await send_fn("⏳ Fetching recharge history...")
+    await send_fn("⏳ Fetching recharge history & analyzing pattern...")
     try:
         today     = date.today()
         date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
@@ -285,6 +285,14 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         records = data if isinstance(data, list) else [data]
+        lang = get_lang(None, context)
+
+        # Analyze recharge pattern
+        pattern = analyze_recharge_pattern(records, lang=lang)
+        pattern_banner = pattern.get("formatted_text", "")
+        if pattern_banner:
+            pattern_banner += "\n\n"
+
         lines   = []
         for r in records[:15]:  # max 15 entries
             dt  = r.get("rechargeDate") or r.get("date", "N/A")
@@ -295,11 +303,13 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
                 line += f"\n   🔑 Token: `{tok}`"
             lines.append(line)
         await send_fn(
-            f"💳 *Recharge History* (last 12 months)\n"
+            f"💳 *Recharge History & Pattern Analysis*\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
+            f"{pattern_banner}"
+            f"📜 *Recent Recharges:*\n"
             + "\n\n".join(lines),
             parse_mode="Markdown",
-            reply_markup=recharge_keyboard(),
+            reply_markup=recharge_keyboard(lang),
         )
     except Exception as e:
         lang = get_lang(None, context)

@@ -46,6 +46,7 @@ from tariff_calc import (
     estimate_bill,
     estimate_units_from_taka,
     calc_stats,
+    analyze_recharge_pattern,
 )
 from keyboards import (
     main_keyboard,
