@@ -710,7 +710,7 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dispatch = {
             ACTION_BALANCE:  fetch_and_send_balance,
             ACTION_INFO:     fetch_and_send_info,
-            ACTION_STATS:    fetch_and_send_stats,
+            ACTION_STATS:    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
             ACTION_SUMMARY:  fetch_and_send_summary,
             ACTION_RECHARGE: fetch_and_send_recharge,
             ACTION_MONTHLY:  fetch_and_send_monthly,
@@ -783,7 +783,7 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dispatch = {
         ACTION_BALANCE:  fetch_and_send_balance,
         ACTION_INFO:     fetch_and_send_info,
-        ACTION_STATS:    fetch_and_send_stats,
+        ACTION_STATS:    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
         ACTION_SUMMARY:  fetch_and_send_summary,
         ACTION_RECHARGE: fetch_and_send_recharge,
         ACTION_MONTHLY:  fetch_and_send_monthly,
@@ -1369,7 +1369,7 @@ async def _cmd(action: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     dispatch = {
         ACTION_BALANCE:  fetch_and_send_balance,
         ACTION_INFO:     fetch_and_send_info,
-        ACTION_STATS:    fetch_and_send_stats,
+        ACTION_STATS:    lambda send_fn, acc, sys, met, ctx: fetch_and_send_stats(send_fn, acc, sys, met, ctx, update=update),
         ACTION_SUMMARY:  fetch_and_send_summary,
         ACTION_RECHARGE: fetch_and_send_recharge,
         ACTION_MONTHLY:  fetch_and_send_monthly,
@@ -1769,7 +1769,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ACTION_MAP = {
         "balance":  (ACTION_BALANCE,  fetch_and_send_balance),
         "info":     (ACTION_INFO,     fetch_and_send_info),
-        "stats":    (ACTION_STATS,    fetch_and_send_stats),
+        "stats":    (ACTION_STATS,    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update)),
         "summary":  (ACTION_SUMMARY,  fetch_and_send_summary),
         "recharge": (ACTION_RECHARGE, fetch_and_send_recharge),
         "monthly":  (ACTION_MONTHLY,  fetch_and_send_monthly),
