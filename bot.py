@@ -1,8 +1,15 @@
 import os
+import logging
 import requests
 import urllib3
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
+
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeChat
@@ -1397,7 +1404,10 @@ async def nesco_cmd(u, c):    return await _cmd(ACTION_NESCO,    u, c)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()  # Acknowledge the button press; may fail if query is stale (>30s)
+    except Exception:
+        pass  # Stale query — continue processing anyway
     send = query.message.reply_text
     data = query.data
 
@@ -1881,11 +1891,16 @@ async def setup_commands(app):
 # =====================================
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error("Exception while handling update:", exc_info=context.error)
+    err = context.error
+    # Silently ignore stale callback query errors — not actionable
+    if "Query is too old" in str(err) or "query id is invalid" in str(err):
+        logger.warning("Ignored stale callback query: %s", err)
+        return
+    logger.error("Exception while handling update:", exc_info=err)
     if isinstance(update, Update) and update.effective_message:
         lang = get_lang(update, context)
         prov = context.user_data.get("provider", "DESCO") if hasattr(context, "user_data") and context.user_data else "DESCO"
-        err_text = str(context.error) if context.error else "Server processing exception"
+        err_text = str(err) if err else "Server processing exception"
         reply = generate_ai_error_explanation(err_text, action_name="Command Handler", provider=prov, lang=lang)
         try:
             await update.effective_message.reply_text(reply, parse_mode="Markdown", reply_markup=main_keyboard(lang))
