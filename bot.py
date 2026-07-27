@@ -584,7 +584,8 @@ provides_cmd = providers_cmd
 async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text   = update.message.text.strip() if update.message and update.message.text else ""
     user_input = convert_bn_digits_to_en(raw_text)
-    send = update.message.reply_text
+    msg_target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    send       = msg_target.reply_text if msg_target else update.message.reply_text
 
     pending = context.user_data.get("pending_action")
     account_no = context.user_data.get("account_no")

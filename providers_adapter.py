@@ -126,6 +126,7 @@ def _desco_get(system: str, endpoint: str, account_no: str = "", meter_no: str =
 
 
 def _generic_provider_get(provider_id: str, system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
+    _clean_expired_cache()
     p_info = PROVIDERS.get(provider_id, {})
     base_url = p_info.get("base_url")
     url = f"{base_url}/{system}/{endpoint}"
