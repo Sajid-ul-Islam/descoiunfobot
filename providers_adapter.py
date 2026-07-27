@@ -70,8 +70,15 @@ def get_provider_systems(provider_id: str) -> list:
 _CACHE = {}
 _CACHE_TTL = 30  # seconds
 
+def _clean_expired_cache():
+    """Prunes expired cache keys to prevent memory leaks."""
+    now = time.time()
+    expired = [k for k, (t, _) in _CACHE.items() if now - t > _CACHE_TTL]
+    for k in expired:
+        _CACHE.pop(k, None)
 
 def _desco_get(system: str, endpoint: str, account_no: str = "", meter_no: str = "", **extra_params) -> tuple:
+    _clean_expired_cache()
     base_url = PROVIDERS["desco"]["base_url"]
     url = f"{base_url}/{system}/customer/{endpoint}"
 
