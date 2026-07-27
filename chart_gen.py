@@ -10,25 +10,43 @@ FONT_FAMILY = "Noto Sans Bengali, Kalpurush, SolaimanLipi, Vrinda, Arial, sans-s
 
 def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
     """Generates a smooth glowing Area + Line chart for daily consumption & cost."""
-    if not daily_data or len(daily_data) < 2:
+    if not daily_data or len(daily_data) < 1:
         return None
 
-    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date", "")))
+    sorted_daily = sorted(daily_data, key=lambda x: str(x.get("date") or x.get("readingDate") or x.get("created_at") or ""))
     dates, units, taka = [], [], []
 
-    for i in range(1, len(sorted_daily)):
-        d_str  = sorted_daily[i].get("date") or sorted_daily[i].get("readingDate", "")
-        u_curr = float(sorted_daily[i].get("consumedUnit") or sorted_daily[i].get("consumption") or sorted_daily[i].get("unit") or 0)
-        u_prev = float(sorted_daily[i-1].get("consumedUnit") or sorted_daily[i-1].get("consumption") or sorted_daily[i-1].get("unit") or 0)
-        u_delta = max(u_curr - u_prev, 0)
+    # Check if consumedUnit values are cumulative meter readings vs daily values
+    is_cumulative = False
+    if len(sorted_daily) >= 2:
+        val1 = float(sorted_daily[0].get("consumedUnit") or sorted_daily[0].get("consumption") or sorted_daily[0].get("unit") or 0)
+        val2 = float(sorted_daily[1].get("consumedUnit") or sorted_daily[1].get("consumption") or sorted_daily[1].get("unit") or 0)
+        if val1 > 300 and val2 >= val1:
+            is_cumulative = True
 
-        t_curr  = float(sorted_daily[i].get("consumedTaka") or sorted_daily[i].get("amount") or sorted_daily[i].get("billAmount") or 0)
-        t_prev  = float(sorted_daily[i-1].get("consumedTaka") or sorted_daily[i-1].get("amount") or sorted_daily[i-1].get("billAmount") or 0)
-        t_delta = max(t_curr - t_prev, 0)
+    if is_cumulative and len(sorted_daily) >= 2:
+        for i in range(1, len(sorted_daily)):
+            d_str = sorted_daily[i].get("date") or sorted_daily[i].get("readingDate") or ""
+            u_curr = float(sorted_daily[i].get("consumedUnit") or sorted_daily[i].get("consumption") or sorted_daily[i].get("unit") or 0)
+            u_prev = float(sorted_daily[i-1].get("consumedUnit") or sorted_daily[i-1].get("consumption") or sorted_daily[i-1].get("unit") or 0)
+            t_curr = float(sorted_daily[i].get("consumedTaka") or sorted_daily[i].get("amount") or sorted_daily[i].get("billAmount") or 0)
+            t_prev = float(sorted_daily[i-1].get("consumedTaka") or sorted_daily[i-1].get("amount") or sorted_daily[i-1].get("billAmount") or 0)
 
-        dates.append(d_str[-5:])  # MM-DD
-        units.append(round(u_delta, 2))
-        taka.append(round(t_delta, 2))
+            dates.append(str(d_str)[-5:] if len(str(d_str)) >= 5 else str(d_str))
+            units.append(round(max(u_curr - u_prev, 0), 2))
+            taka.append(round(max(t_curr - t_prev, 0), 2))
+    else:
+        for item in sorted_daily:
+            d_str = item.get("date") or item.get("readingDate") or ""
+            u_val = float(item.get("consumedUnit") or item.get("consumption") or item.get("unit") or 0)
+            t_val = float(item.get("consumedTaka") or item.get("amount") or item.get("billAmount") or 0)
+
+            dates.append(str(d_str)[-5:] if len(str(d_str)) >= 5 else str(d_str))
+            units.append(round(u_val, 2))
+            taka.append(round(t_val, 2))
+
+    if not dates:
+        return None
 
     dates = dates[-18:]
     units = units[-18:]

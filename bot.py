@@ -1488,11 +1488,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if account_no and system:
             status_msg = await query.message.reply_text("⏳ Generating daily Plotly chart...")
             today = date.today()
-            date_from = today.replace(day=1).strftime("%Y-%m-%d")
+            date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
             date_to   = today.strftime("%Y-%m-%d")
             daily_data, code, desc = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
-            if not daily_data or len(daily_data) < 2:
-                date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            if not daily_data or len(daily_data) < 1:
+                date_from = (today - timedelta(days=60)).strftime("%Y-%m-%d")
                 daily_data, code, desc = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
 
             try:
@@ -1510,7 +1510,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if buf:
                 await query.message.reply_photo(photo=buf, caption=f"📆 *Daily Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=daily_keyboard(lang))
             else:
-                err_text = generate_ai_error_explanation(desc or "Daily usage records unavailable", action_name="Daily Chart Generation", provider=prov, lang=lang)
+                err_text = generate_ai_error_explanation(desc or "Daily usage records unavailable on provider server", action_name="Daily Chart Generation", provider=prov, lang=lang)
                 await send(err_text, parse_mode="Markdown", reply_markup=back_keyboard(lang))
         else:
             await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
