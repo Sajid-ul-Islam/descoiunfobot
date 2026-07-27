@@ -1208,6 +1208,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     send = query.message.reply_text
     data = query.data
 
+    if data == "start":
+        context.user_data.pop("pending_action", None)
+        lang = get_lang(update, context)
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system")
+        await send_main_menu(send, account_no, system, lang)
+        return ConversationHandler.END
+
     if data == "select_provider":
         lang = get_lang(update, context)
         await send(
@@ -1394,17 +1402,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_no = context.user_data.get("account_no")
         system     = context.user_data.get("system")
         meter_no   = context.user_data.get("meter_no", "")
+        prov       = context.user_data.get("provider", "desco")
+        lang       = get_lang(update, context)
         if account_no and system:
             await query.message.reply_text("⏳ Generating daily Plotly chart...")
             today = date.today()
-            date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+            date_from = today.replace(day=1).strftime("%Y-%m-%d")
             date_to   = today.strftime("%Y-%m-%d")
-            daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, dateFrom=date_from, dateTo=date_to)
-            buf = generate_daily_chart(daily_data or [], account_no, system)
+            daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+            if not daily_data or len(daily_data) < 2:
+                date_from = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+                daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+            buf = generate_daily_chart(daily_data or [], account_no, system, lang=lang)
             if buf:
-                await query.message.reply_photo(photo=buf, caption=f"📆 *Daily Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=daily_keyboard())
+                await query.message.reply_photo(photo=buf, caption=f"📆 *Daily Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=daily_keyboard(lang))
             else:
-                await send("⚠️ Daily chart data unavailable.", reply_markup=back_keyboard())
+                await send("⚠️ Daily chart data unavailable.", reply_markup=back_keyboard(lang))
         else:
             await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
             context.user_data["pending_action"] = ACTION_DAILY
@@ -1415,17 +1428,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_no = context.user_data.get("account_no")
         system     = context.user_data.get("system")
         meter_no   = context.user_data.get("meter_no", "")
+        prov       = context.user_data.get("provider", "desco")
+        lang       = get_lang(update, context)
         if account_no and system:
             await query.message.reply_text("⏳ Generating monthly Plotly chart...")
             today = date.today()
             month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
             month_to   = today.strftime("%Y-%m")
-            monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, monthFrom=month_from, monthTo=month_to)
-            buf = generate_monthly_chart(monthly_data or [], account_no, system)
+            monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
+            buf = generate_monthly_chart(monthly_data or [], account_no, system, lang=lang)
             if buf:
-                await query.message.reply_photo(photo=buf, caption=f"📅 *Monthly Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=monthly_keyboard())
+                await query.message.reply_photo(photo=buf, caption=f"📅 *Monthly Consumption Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=monthly_keyboard(lang))
             else:
-                await send("⚠️ Monthly chart data unavailable.", reply_markup=back_keyboard())
+                await send("⚠️ Monthly chart data unavailable.", reply_markup=back_keyboard(lang))
         else:
             await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
             context.user_data["pending_action"] = ACTION_MONTHLY
@@ -1436,17 +1451,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_no = context.user_data.get("account_no")
         system     = context.user_data.get("system")
         meter_no   = context.user_data.get("meter_no", "")
+        prov       = context.user_data.get("provider", "desco")
+        lang       = get_lang(update, context)
         if account_no and system:
             await query.message.reply_text("⏳ Generating recharge Plotly chart...")
             today     = date.today()
             date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
             date_to   = today.strftime("%Y-%m-%d")
-            recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, dateFrom=date_from, dateTo=date_to)
-            buf = generate_recharge_chart(recharge_data or [], account_no, system)
+            recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+            buf = generate_recharge_chart(recharge_data or [], account_no, system, lang=lang)
             if buf:
-                await query.message.reply_photo(photo=buf, caption=f"💳 *Recharge History Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=recharge_keyboard())
+                await query.message.reply_photo(photo=buf, caption=f"💳 *Recharge History Chart* — `{account_no}`", parse_mode="Markdown", reply_markup=recharge_keyboard(lang))
             else:
-                await send("⚠️ Recharge chart data unavailable.", reply_markup=back_keyboard())
+                await send("⚠️ Recharge chart data unavailable.", reply_markup=back_keyboard(lang))
         else:
             await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
             context.user_data["pending_action"] = ACTION_RECHARGE
@@ -1593,9 +1610,16 @@ def main():
         states={
             ASK_ACCOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, account_received),
+                CallbackQueryHandler(button_handler),
+                CommandHandler("start", start),
+                CommandHandler("cancel", cancel),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("start", start),
+        ],
+        allow_reentry=True,
     )
 
     app.add_handler(CommandHandler("start",    start))

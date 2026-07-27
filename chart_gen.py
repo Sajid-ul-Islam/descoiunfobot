@@ -17,13 +17,13 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
     dates, units, taka = [], [], []
 
     for i in range(1, len(sorted_daily)):
-        d_str  = sorted_daily[i].get("date", "")
-        u_curr = float(sorted_daily[i].get("consumedUnit") or 0)
-        u_prev = float(sorted_daily[i-1].get("consumedUnit") or 0)
+        d_str  = sorted_daily[i].get("date") or sorted_daily[i].get("readingDate", "")
+        u_curr = float(sorted_daily[i].get("consumedUnit") or sorted_daily[i].get("consumption") or sorted_daily[i].get("unit") or 0)
+        u_prev = float(sorted_daily[i-1].get("consumedUnit") or sorted_daily[i-1].get("consumption") or sorted_daily[i-1].get("unit") or 0)
         u_delta = max(u_curr - u_prev, 0)
 
-        t_curr  = float(sorted_daily[i].get("consumedTaka") or 0)
-        t_prev  = float(sorted_daily[i-1].get("consumedTaka") or 0)
+        t_curr  = float(sorted_daily[i].get("consumedTaka") or sorted_daily[i].get("amount") or sorted_daily[i].get("billAmount") or 0)
+        t_prev  = float(sorted_daily[i-1].get("consumedTaka") or sorted_daily[i-1].get("amount") or sorted_daily[i-1].get("billAmount") or 0)
         t_delta = max(t_curr - t_prev, 0)
 
         dates.append(d_str[-5:])  # MM-DD
@@ -100,10 +100,10 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
     if not monthly_data:
         return None
 
-    sorted_mo = sorted(monthly_data, key=lambda x: str(x.get("month", "")))[-12:]
-    months   = [m.get("month", "") for m in sorted_mo]
-    mo_units = [float(m.get("consumedUnit") or 0) for m in sorted_mo]
-    mo_taka  = [float(m.get("consumedTaka") or 0) for m in sorted_mo]
+    sorted_mo = sorted(monthly_data, key=lambda x: str(x.get("month") or x.get("readingMonth", "")))[-12:]
+    months   = [m.get("month") or m.get("readingMonth", "") for m in sorted_mo]
+    mo_units = [float(m.get("consumedUnit") or m.get("consumption") or m.get("unit") or 0) for m in sorted_mo]
+    mo_taka  = [float(m.get("consumedTaka") or m.get("amount") or m.get("billAmount") or 0) for m in sorted_mo]
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
