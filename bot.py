@@ -63,6 +63,14 @@ ACTION_DAILY    = "daily"
 ACTION_CHART    = "chart"
 ACTION_EXPORT   = "export"
 
+BN_TO_EN_TRANS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+
+def convert_bn_digits_to_en(text: str) -> str:
+    """Converts Bangla numeral digits (০-৯) to ASCII English digits (0-9)."""
+    if not text:
+        return ""
+    return text.translate(BN_TO_EN_TRANS).strip()
+
 # =====================================
 # DESCO API
 # =====================================
@@ -79,6 +87,7 @@ def detect_system(user_input: str, provider: str = "desco") -> tuple:
     Returns (system, account_no, meter_no, info_data, status)
     status can be: "OK", "EMPTY_PREPAID", "NOT_FOUND"
     """
+    user_input = convert_bn_digits_to_en(user_input)
     combos = [
         (user_input, ""),   # treat as account number
         ("",   user_input),  # treat as meter number
@@ -555,7 +564,8 @@ async def providers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================================
 
 async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text.strip()
+    raw_text   = update.message.text.strip() if update.message and update.message.text else ""
+    user_input = convert_bn_digits_to_en(raw_text)
     send = update.message.reply_text
 
     pending = context.user_data.get("pending_action")
