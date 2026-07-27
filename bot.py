@@ -597,6 +597,7 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = get_lang(update, context)
         account_no = context.user_data.get("account_no", "")
         system     = context.user_data.get("system", "unified")
+        meter_no   = context.user_data.get("meter_no", "")
         ctx_data   = {"provider": context.user_data.get("provider", "DESCO"), "account_no": account_no}
         raw_reply  = query_ai_assistant(user_input, context_data=ctx_data, lang=lang)
         clean_text, intent = extract_ai_intent(raw_reply)
@@ -614,6 +615,23 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         reply_kb = kb_map.get(intent, main_keyboard(lang))
         await send(clean_text, parse_mode="Markdown", reply_markup=reply_kb)
+
+        # Automatic Command Triggering if account is saved and intent matched
+        if account_no and intent:
+            dispatch_fn = {
+                "balance":  fetch_and_send_balance,
+                "info":     fetch_and_send_info,
+                "stats":    fetch_and_send_stats,
+                "chart":    lambda s, a, sys, m, c: fetch_and_send_stats(s, a, sys, m, c, update=update),
+                "summary":  fetch_and_send_summary,
+                "recharge": fetch_and_send_recharge,
+                "monthly":  fetch_and_send_monthly,
+                "daily":    fetch_and_send_daily,
+                "export":   fetch_and_send_export,
+            }.get(intent)
+            if dispatch_fn:
+                await dispatch_fn(send, account_no, system, meter_no, context)
+
         return ConversationHandler.END
 
     if pending in ["date_lookup", "date_range_lookup"] or " to " in user_input.lower() or " - " in user_input:
@@ -836,7 +854,7 @@ async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
         await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
-async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
+async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, update: Update = None):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
@@ -844,46 +862,60 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
-    await send_fn("⏳ Calculating stats...")
+    msg_target = update.effective_message if update else None
+    if msg_target:
+        await msg_target.reply_text("⏳ Processing stats & generating visual dashboard...")
+    else:
+        await send_fn("⏳ Processing stats & generating visual dashboard...")
+
     try:
+        today = date.today()
         bal_data,  bal_code,  bal_desc  = desco_get(system, "getBalance",      account_no, meter_no, provider=prov)
         info_data, info_code, info_desc = desco_get(system, "getCustomerInfo", account_no, meter_no, provider=prov)
+        
+        date_from = (today - timedelta(days=65)).strftime("%Y-%m-%d")
+        date_to   = today.strftime("%Y-%m-%d")
+        daily_data, _, _ = desco_get(system, "getCustomerDailyConsumption", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+        month_to   = today.strftime("%Y-%m")
+        monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
+
         if not bal_data:
             msg = ("⚠️ No balance data." if bal_code == 200 else f"❌ *{bal_desc}*")
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
+
         s = calc_stats(bal_data, info_data)
-        load_line = f"⚡ Load Utilisation: `{s['load_pct']}%`\n" if s['load_pct'] is not None else ""
-        conn_line = f"🏗 Connection Age: `{s['conn_age']}`\n"  if s["conn_age"]            else ""
+        load_line = f"🔌 Sanctioned load: `{info_data.get('sanctionLoad','N/A')} kW` (Peak load: ~{s['load_pct']}%)\n" if s["load_pct"] else ""
+        lang = get_lang(update, context) if update else "en"
         
-        lang = get_lang(None, context)
-        tariff_tip = get_tariff_tip(float(bal_data.get('currentMonthConsumption', 0)), lang=lang)
         mo_use = float(bal_data.get('currentMonthConsumption', 0))
         slab_warning = get_tariff_slab_warning(mo_use, s['projected_mo'], s['days_elapsed'], s['days_left'], lang=lang)
-        
-        await send_fn(
-            f"📊 *Usage Statistics*\n\n"
+
+        caption_text = (
+            f"📊 *Usage Statistics & Analytics Dashboard*\n\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
-            f"📅 Days into month: `{s['days_elapsed']}`\n"
-            f"📆 Days remaining: `{s['days_left']}`\n\n"
-            f"⚡ *Consumption*\n"
-            f"📈 This month: `{mo_use:.2f} Unit`\n"
-            f"📉 Daily average: `{s['daily_avg']} Unit/day`\n"
-            f"🔮 Projected: `{s['projected_mo']} Unit`\n\n"
-            f"💰 *Balance*\n"
-            f"💵 Current: *৳{bal_data.get('balance', 0)}*\n"
-            f"🕐 Est. days left: `{s['days_bal_lasts']} days`\n\n"
-            f"🧾 *Bill Estimate (LT-A)*\n"
-            f"💳 Approx: *~৳{s['est_bill']}*\n"
-            f"_(Based on {s['projected_mo']} projected units, excl. demand charge)_\n\n"
-            f"{load_line}{conn_line}"
-            f"{slab_warning}",
-            parse_mode="Markdown",
-            reply_markup=main_keyboard(lang),
+            f"⚡ *Month Usage:* `{mo_use:.2f} Unit` | 📉 Avg: `{s['daily_avg']} Unit/day`\n"
+            f"🔮 *Projected:* `{s['projected_mo']} Unit` | 💳 Est. Bill: *~৳{s['est_bill']}*\n"
+            f"💵 *Balance:* *৳{bal_data.get('balance', 0)}* (lasts ~`{s['days_bal_lasts']} days`)\n"
+            f"{load_line}{slab_warning}"
         )
+
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7)
+
+        if buf and msg_target:
+            await msg_target.reply_photo(
+                photo=buf,
+                caption=caption_text,
+                parse_mode="Markdown",
+                reply_markup=chart_range_keyboard(lang, days=7),
+            )
+        else:
+            await send_fn(caption_text, parse_mode="Markdown", reply_markup=chart_range_keyboard(lang, days=7))
     except Exception as e:
         lang = get_lang(None, context)
-        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Stats & Dashboard", provider=prov, lang=lang)
         await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
