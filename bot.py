@@ -1864,6 +1864,8 @@ async def setup_commands(app):
     ])
 
     # Admin-only command menu (shows /admin only to ADMIN_ID)
+    # Note: This requires the admin to have already started a chat with the bot.
+    # On fresh deployments, the first attempt may fail with "Chat not found" — that's normal.
     if ADMIN_ID:
         try:
             await app.bot.set_my_commands(
@@ -1871,7 +1873,7 @@ async def setup_commands(app):
                     BotCommand("start",   "🏠 Main menu"),
                     BotCommand("balance", "⚡ Prepaid balance"),
                     BotCommand("info",    "👤 Customer & meter info"),
-                    BotCommand("stats",   "📊 Usage stats & bill estimate"),
+                    BotCommand("stats",   "📊 Usage stats & visual dashboard"),
                     BotCommand("summary", "📋 Full account summary"),
                     BotCommand("daily",   "📆 Daily usage & cost breakdown"),
                     BotCommand("monthly", "📅 Monthly consumption history"),
@@ -1883,8 +1885,16 @@ async def setup_commands(app):
                 ],
                 scope=BotCommandScopeChat(chat_id=ADMIN_ID)
             )
+            logger.info("Admin command scope registered for ADMIN_ID=%s", ADMIN_ID)
         except Exception as e:
-            print("Admin command scope error:", e)
+            err_str = str(e).lower()
+            if "chat not found" in err_str or "not found" in err_str:
+                logger.info(
+                    "Admin command scope skipped (admin has not started the bot yet). "
+                    "Send /start to the bot as admin to activate the /admin command menu."
+                )
+            else:
+                logger.warning("Admin command scope registration failed: %s", e)
 
 # =====================================
 # MAIN
