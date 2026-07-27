@@ -32,7 +32,21 @@ Instructions for Natural Language Processing (NLP & RAG):
 1. Recommend specific commands (e.g. /chart, /balance, /daily, /calc) when users ask natural questions like "show my graph", "what is my bill", "how to calculate AC cost".
 2. Reply in the user's language (Bangla or English).
 3. Keep answers clear, structured, and helpful with Markdown formatting.
+4. If the user's input clearly asks to view or inspect balance, chart, daily breakdown, stats, summary, monthly history, recharge history, or appliance calculator, add a tag at the very end of your response like [INTENT:chart], [INTENT:balance], [INTENT:daily], [INTENT:monthly], [INTENT:recharge], [INTENT:stats], [INTENT:summary], or [INTENT:calc].
 """
+
+import re
+
+def extract_ai_intent(ai_reply: str) -> tuple[str, str | None]:
+    """Extracts [INTENT:action] tag if present, returning (cleaned_reply, intent_action)."""
+    if not ai_reply:
+        return "", None
+    match = re.search(r"\[INTENT:([a-zA-Z0-9_]+)\]", ai_reply, re.IGNORECASE)
+    if match:
+        intent = match.group(1).lower()
+        cleaned = re.sub(r"\[INTENT:[a-zA-Z0-9_]+\]", "", ai_reply, flags=re.IGNORECASE).strip()
+        return cleaned, intent
+    return ai_reply.strip(), None
 
 def query_gemini(full_prompt: str) -> str | None:
     """Queries Google AI Studio (Gemini Flash) API."""

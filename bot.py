@@ -28,10 +28,10 @@ from i18n import get_msg
 from palli_bidyut import get_palli_text, get_token_help_text
 from power_bd import get_bpdb_text, get_nesco_text, get_all_coverage_text
 from providers_adapter import provider_get, is_api_provider, get_provider_systems, PROVIDERS
-from tariff_tips import get_tariff_tip, get_low_balance_warning
-from report_gen import generate_csv_report
+from tariff_tips import get_tariff_tip, get_low_balance_warning, get_tariff_slab_warning
+from report_gen import generate_csv_report, generate_text_statement
 from appliance_calc import get_calc_text, get_tariff_guide_text
-from ai_assistant import query_ai_assistant
+from ai_assistant import query_ai_assistant, extract_ai_intent
 
 # =====================================
 # CONFIG
@@ -247,6 +247,15 @@ def chart_range_keyboard(lang: str = "en", days: int = 7):
         [
             InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start"),
         ],
+    ])
+
+def export_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 CSV Excel Report", callback_data="export_csv"),
+            InlineKeyboardButton("📄 Visual Statement", callback_data="export_statement"),
+        ],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
 def recharge_keyboard(lang: str = "en"):
@@ -561,8 +570,22 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account_no = context.user_data.get("account_no", "")
         system     = context.user_data.get("system", "unified")
         ctx_data   = {"provider": context.user_data.get("provider", "DESCO"), "account_no": account_no}
-        ai_reply   = query_ai_assistant(user_input, context_data=ctx_data, lang=lang)
-        await send(ai_reply, parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        raw_reply  = query_ai_assistant(user_input, context_data=ctx_data, lang=lang)
+        clean_text, intent = extract_ai_intent(raw_reply)
+
+        kb_map = {
+            "chart": chart_range_keyboard(lang),
+            "daily": daily_keyboard(lang),
+            "monthly": monthly_keyboard(lang),
+            "recharge": recharge_keyboard(lang),
+            "calc": back_keyboard(lang),
+            "tariff": back_keyboard(lang),
+            "stats": main_keyboard(lang),
+            "summary": main_keyboard(lang),
+            "balance": main_keyboard(lang),
+        }
+        reply_kb = kb_map.get(intent, main_keyboard(lang))
+        await send(clean_text, parse_mode="Markdown", reply_markup=reply_kb)
         return ConversationHandler.END
 
     if pending in ["date_lookup", "date_range_lookup"] or " to " in user_input.lower() or " - " in user_input:
@@ -770,6 +793,8 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
         
         lang = get_lang(None, context)
         tariff_tip = get_tariff_tip(float(bal_data.get('currentMonthConsumption', 0)), lang=lang)
+        mo_use = float(bal_data.get('currentMonthConsumption', 0))
+        slab_warning = get_tariff_slab_warning(mo_use, s['projected_mo'], s['days_elapsed'], s['days_left'], lang=lang)
         
         await send_fn(
             f"📊 *Usage Statistics*\n\n"
@@ -777,7 +802,7 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
             f"📅 Days into month: `{s['days_elapsed']}`\n"
             f"📆 Days remaining: `{s['days_left']}`\n\n"
             f"⚡ *Consumption*\n"
-            f"📈 This month: `{float(bal_data.get('currentMonthConsumption',0)):.2f} Unit`\n"
+            f"📈 This month: `{mo_use:.2f} Unit`\n"
             f"📉 Daily average: `{s['daily_avg']} Unit/day`\n"
             f"🔮 Projected: `{s['projected_mo']} Unit`\n\n"
             f"💰 *Balance*\n"
@@ -786,9 +811,10 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
             f"🧾 *Bill Estimate (LT-A)*\n"
             f"💳 Approx: *~৳{s['est_bill']}*\n"
             f"_(Based on {s['projected_mo']} projected units, excl. demand charge)_\n\n"
-            f"{load_line}{conn_line}",
+            f"{load_line}{conn_line}"
+            f"{slab_warning}",
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(lang),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -811,6 +837,9 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
             return
         s = calc_stats(bal_data, info_data)
         conn_line = f"🏗 Connection age: `{s['conn_age']}`\n" if s["conn_age"] else ""
+        lang = get_lang(None, context)
+        mo_use = float(bal_data.get('currentMonthConsumption', 0))
+        slab_warning = get_tariff_slab_warning(mo_use, s['projected_mo'], s['days_elapsed'], s['days_left'], lang=lang)
         await send_fn(
             f"📋 *Full Account Summary*\n\n"
             f"👤 *{info_data.get('customerName','N/A')}*\n"
@@ -818,7 +847,7 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
             f"📍 {info_data.get('installationAddress','N/A')}\n\n"
             f"💰 *Balance & Usage*\n"
             f"💵 Balance: *৳{bal_data.get('balance',0)}*\n"
-            f"📈 This month: `{float(bal_data.get('currentMonthConsumption',0)):.2f} Unit`\n"
+            f"📈 This month: `{mo_use:.2f} Unit`\n"
             f"📉 Daily avg: `{s['daily_avg']} Unit/day`\n"
             f"🔮 Projected: `{s['projected_mo']} Unit`\n"
             f"💳 Est. bill: *~৳{s['est_bill']}*\n"
@@ -829,9 +858,10 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
             f"`{info_data.get('sanctionLoad','N/A')} kW`\n"
             f"🌐 Feeder: `{info_data.get('feederName','N/A')}`\n"
             f"📋 Tariff: `{info_data.get('tariffSolution','N/A')}`\n"
-            f"{conn_line}",
+            f"{conn_line}"
+            f"{slab_warning}",
             parse_mode="Markdown",
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(lang),
         )
     except Exception as e:
         await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
@@ -1157,32 +1187,12 @@ async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
-    await send_fn(get_msg(lang, "exporting"))
-    try:
-        today = date.today()
-        month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
-        month_to   = today.strftime("%Y-%m")
-        monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
-
-        date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
-        date_to   = today.strftime("%Y-%m-%d")
-        recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
-
-        csv_buf = generate_csv_report(monthly_data or [], recharge_data or [], account_no, system)
-        filename = f"DESCO_Report_{account_no}_{today.strftime('%Y%m%d')}.csv"
-
-        if hasattr(send_fn, "__self__") and hasattr(send_fn.__self__, "reply_document"):
-            await send_fn.__self__.reply_document(
-                document=csv_buf,
-                filename=filename,
-                caption=f"📥 *Utility Consumption & Recharge Report*\n🔑 Account: `{account_no}` _{system}_",
-                parse_mode="Markdown",
-                reply_markup=main_keyboard(lang),
-            )
-        else:
-            await send_fn("📥 Report generated.", reply_markup=main_keyboard(lang))
-    except Exception as e:
-        await send_fn(f"❌ Error exporting report: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard(lang))
+    await send_fn(
+        "📥 *Utility Report & Financial Statement*\n\n"
+        "Select your preferred report format below:",
+        parse_mode="Markdown",
+        reply_markup=export_keyboard(lang),
+    )
 
 # =====================================
 # COMMAND ENTRY POINTS
@@ -1494,6 +1504,67 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ASK_ACCOUNT
         return
 
+    if data == "export_csv":
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system", "unified")
+        meter_no   = context.user_data.get("meter_no", "")
+        prov       = context.user_data.get("provider", "desco")
+        lang       = get_lang(update, context)
+        if account_no and system:
+            await query.message.reply_text(get_msg(lang, "exporting"))
+            today = date.today()
+            month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+            month_to   = today.strftime("%Y-%m")
+            monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
+
+            date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
+            date_to   = today.strftime("%Y-%m-%d")
+            recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+            csv_buf = generate_csv_report(monthly_data or [], recharge_data or [], account_no, system)
+            filename = f"Utility_Report_{account_no}_{today.strftime('%Y%m%d')}.csv"
+
+            if hasattr(query.message, "reply_document"):
+                await query.message.reply_document(
+                    document=csv_buf,
+                    filename=filename,
+                    caption=f"📥 *Utility Consumption & Recharge CSV Report*\n🔑 Account: `{account_no}` _{system}_",
+                    parse_mode="Markdown",
+                    reply_markup=export_keyboard(lang),
+                )
+            else:
+                await send("📥 CSV Report generated.", reply_markup=export_keyboard(lang))
+        else:
+            await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_EXPORT
+            return ASK_ACCOUNT
+        return
+
+    if data == "export_statement":
+        account_no = context.user_data.get("account_no")
+        system     = context.user_data.get("system", "unified")
+        meter_no   = context.user_data.get("meter_no", "")
+        prov       = context.user_data.get("provider", "desco")
+        lang       = get_lang(update, context)
+        if account_no and system:
+            await query.message.reply_text("⏳ Generating annual statement report...")
+            today = date.today()
+            month_from = (today - relativedelta(months=11)).strftime("%Y-%m")
+            month_to   = today.strftime("%Y-%m")
+            monthly_data, _, _ = desco_get(system, "getCustomerMonthlyConsumption", account_no, meter_no, provider=prov, monthFrom=month_from, monthTo=month_to)
+
+            date_from = (today - timedelta(days=350)).strftime("%Y-%m-%d")
+            date_to   = today.strftime("%Y-%m-%d")
+            recharge_data, _, _ = desco_get(system, "getRechargeHistory", account_no, meter_no, provider=prov, dateFrom=date_from, dateTo=date_to)
+
+            stmt_text = generate_text_statement(monthly_data or [], recharge_data or [], account_no, system, lang=lang)
+            await send(stmt_text, parse_mode="Markdown", reply_markup=export_keyboard(lang))
+        else:
+            await send("🔢 Enter your *account number* or *meter number*:", parse_mode="Markdown")
+            context.user_data["pending_action"] = ACTION_EXPORT
+            return ASK_ACCOUNT
+        return
+
     ACTION_MAP = {
         "balance":  (ACTION_BALANCE,  fetch_and_send_balance),
         "info":     (ACTION_INFO,     fetch_and_send_info),
@@ -1663,7 +1734,7 @@ def main():
     app.add_handler(CommandHandler("token",    token_cmd))
     app.add_handler(CommandHandler("providers",providers_cmd))
     app.add_handler(CommandHandler("admin",    admin_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|ai_info|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|range_7|range_15|range_30|range_60|range_date|range_custom_dates)$"))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(start|help|other_menu|ai_info|calc_info|tariff_info|postpaid_info|palli_info|token_info|bpdb_info|nesco_info|providers_info|settings|select_provider|set_prov_.*|set_lang_en|set_lang_bn|chart_daily|chart_monthly|chart_recharge|export_csv|export_statement|range_7|range_15|range_30|range_60|range_date|range_custom_dates)$"))
     app.add_handler(conv)
     app.post_init = setup_commands
 
