@@ -1809,7 +1809,7 @@ def main():
     conv = ConversationHandler(
         entry_points=[
             *[CommandHandler(name, fn) for name, fn in CMDS],
-            CallbackQueryHandler(button_handler, pattern=f"^({ALL_ACTIONS})$"),
+            CallbackQueryHandler(button_handler),
         ],
         states={
             ASK_ACCOUNT: [
