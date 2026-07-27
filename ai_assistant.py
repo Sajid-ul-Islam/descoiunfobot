@@ -151,3 +151,33 @@ def query_ai_assistant(user_prompt: str, context_data: dict = None, lang: str = 
         "To activate full AI natural language chat, add `GEMINI_API_KEY` or `GROQ_API_KEY` in your `.env` file.\n\n"
         "💡 *Quick Tip:* Set your AC to 25°C and operate heavy appliances during Off-Peak hours (11 PM – 5 PM) to save electricity!"
     )
+
+
+def generate_ai_error_explanation(error_desc: str, action_name: str = "Command", provider: str = "DESCO", lang: str = "en") -> str:
+    """Uses AI provider to generate a user-friendly explanation when a command or request fails."""
+    prompt = (
+        f"The user attempted the action '{action_name}' for provider '{provider}', but the system encountered an issue: '{error_desc}'.\n"
+        f"Explain clearly in {'Bangla' if lang == 'bn' else 'English'} why this action failed or could not be completed, and provide 2-3 helpful troubleshooting tips or alternative steps for the user.\n"
+        f"Keep the tone polite, concise, and helpful with Markdown formatting."
+    )
+    
+    ai_explanation = query_gemini(prompt) or query_groq(prompt) or query_openrouter(prompt)
+    if ai_explanation:
+        header = "🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট — সেবা স্ট্যাটাস*" if lang == "bn" else "🤖 *AI Smart Assistant — Status Explanation*"
+        return f"{header}\n\n{ai_explanation}"
+
+    # Structured fallback if AI keys offline
+    if lang == "bn":
+        return (
+            f"🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট — সেবা বার্তা*\n\n"
+            f"❌ *{action_name} সম্পন্ন করা যায়নি*\n"
+            f"📌 *কারণ:* {error_desc}\n\n"
+            f"💡 *পরামর্শ:* কিছু সময় পর পুনরায় চেষ্টা করুন অথবা সার্ভার স্ট্যাটাস ও অ্যাকাউন্ট নম্বর যাচাই করুন।"
+        )
+
+    return (
+        f"🤖 *AI Smart Assistant — Status Explanation*\n\n"
+        f"❌ *Could not complete {action_name}*\n"
+        f"📌 *Reason:* {error_desc}\n\n"
+        f"💡 *Tip:* Please try again in a few moments or verify your account number and provider settings."
+    )

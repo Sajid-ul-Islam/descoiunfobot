@@ -31,7 +31,7 @@ from providers_adapter import provider_get, is_api_provider, get_provider_system
 from tariff_tips import get_tariff_tip, get_low_balance_warning, get_tariff_slab_warning
 from report_gen import generate_csv_report, generate_text_statement
 from appliance_calc import get_calc_text, get_tariff_guide_text
-from ai_assistant import query_ai_assistant, extract_ai_intent
+from ai_assistant import query_ai_assistant, extract_ai_intent, generate_ai_error_explanation
 
 # =====================================
 # CONFIG
@@ -610,8 +610,40 @@ async def account_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ASK_ACCOUNT
 
-    await send("🔍 Detecting account...")
     prov = context.user_data.get("provider", "desco")
+
+    if not is_api_provider(prov):
+        context.user_data["account_no"] = user_input
+        context.user_data["system"]     = "portal"
+        context.user_data["meter_no"]   = ""
+        track_user(update.effective_user, "account_submit_portal", user_input)
+
+        p_name = PROVIDERS.get(prov, {}).get("name", prov.upper())
+        await send(
+            f"✅ Account `{user_input}` saved for *{p_name}*",
+            parse_mode="Markdown",
+        )
+        action = context.user_data.pop("pending_action", ACTION_BALANCE)
+        dispatch = {
+            ACTION_BALANCE:  fetch_and_send_balance,
+            ACTION_INFO:     fetch_and_send_info,
+            ACTION_STATS:    fetch_and_send_stats,
+            ACTION_SUMMARY:  fetch_and_send_summary,
+            ACTION_RECHARGE: fetch_and_send_recharge,
+            ACTION_MONTHLY:  fetch_and_send_monthly,
+            ACTION_DAILY:    fetch_and_send_daily,
+            ACTION_EXPORT:   fetch_and_send_export,
+            ACTION_CHART:    lambda send, acc, sys, met, ctx: fetch_and_send_chart(send, acc, sys, met, ctx, update=update),
+        }
+        if action in dispatch:
+            await dispatch[action](send, user_input, "portal", "", context)
+        else:
+            lang = get_lang(update, context)
+            msg_text, markup = get_non_desco_reply(prov, lang, account_no=user_input)
+            await send(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
+        return ConversationHandler.END
+
+    await send("🔍 Detecting account...")
     system, account_no, meter_no, info_data, status = detect_system(user_input, provider=prov)
 
     if status == "EMPTY_PREPAID":
@@ -686,21 +718,22 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # FETCH FUNCTIONS
 # =====================================
 
-def get_non_desco_reply(prov: str, lang: str):
+def get_non_desco_reply(prov: str, lang: str, account_no: str = ""):
+    acc_str = f"\n\n🔑 *Saved Account:* `{account_no}`" if account_no else ""
     if prov == "breb":
-        return get_palli_text(lang), palli_keyboard(lang)
+        return get_palli_text(lang) + acc_str, palli_keyboard(lang)
     elif prov == "bpdb":
-        return get_bpdb_text(lang), bpdb_keyboard(lang)
+        return get_bpdb_text(lang) + acc_str, bpdb_keyboard(lang)
     elif prov == "nesco":
-        return get_nesco_text(lang), back_keyboard(lang)
+        return get_nesco_text(lang) + acc_str, back_keyboard(lang)
     else:
-        return get_all_coverage_text(lang), main_keyboard(lang)
+        return get_all_coverage_text(lang) + acc_str, main_keyboard(lang)
 
 async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -729,14 +762,16 @@ async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context)
             reply_markup=main_keyboard(lang),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -768,14 +803,16 @@ async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
             reply_markup=main_keyboard(),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -817,14 +854,16 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context):
             reply_markup=main_keyboard(lang),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -864,14 +903,16 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
             reply_markup=main_keyboard(lang),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -906,14 +947,16 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
             reply_markup=recharge_keyboard(),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -947,14 +990,16 @@ async def fetch_and_send_monthly(send_fn, account_no, system, meter_no, context)
             reply_markup=monthly_keyboard(),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 
 async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -1018,7 +1063,9 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
             reply_markup=daily_keyboard(),
         )
     except Exception as e:
-        await send_fn(f"❌ Error: `{e}`", parse_mode="Markdown", reply_markup=back_keyboard())
+        lang = get_lang(None, context)
+        err_msg = generate_ai_error_explanation(str(e), action_name="Command", provider=prov, lang=lang)
+        await send_fn(err_msg, parse_mode="Markdown", reply_markup=back_keyboard(lang))
 
 async def fetch_and_send_chart(send_fn, account_no, system, meter_no, context, update: Update = None, days: int = 7):
     msg_target = update.effective_message if update else None
@@ -1183,7 +1230,7 @@ async def fetch_and_send_export(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     lang = get_lang(None, context)
     if not is_api_provider(prov):
-        msg_text, markup = get_non_desco_reply(prov, lang)
+        msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
         return
 
@@ -1680,9 +1727,22 @@ async def setup_commands(app):
 # MAIN
 # =====================================
 
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error("Exception while handling update:", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        lang = get_lang(update, context)
+        prov = context.user_data.get("provider", "DESCO") if hasattr(context, "user_data") and context.user_data else "DESCO"
+        err_text = str(context.error) if context.error else "Server processing exception"
+        reply = generate_ai_error_explanation(err_text, action_name="Command Handler", provider=prov, lang=lang)
+        try:
+            await update.effective_message.reply_text(reply, parse_mode="Markdown", reply_markup=main_keyboard(lang))
+        except Exception:
+            pass
+
 def main():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
+    app.add_error_handler(global_error_handler)
 
     CMDS = [
         ("balance",  balance_cmd),
