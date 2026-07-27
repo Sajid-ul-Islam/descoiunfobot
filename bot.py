@@ -150,6 +150,23 @@ def estimate_bill(units: float) -> float:
         prev    = limit
     return round(charge, 2)
 
+def estimate_units_from_taka(taka: float) -> float:
+    """Inverts the LT-A tariff formula to estimate exact consumption units (kWh) from a bill Taka amount."""
+    if taka <= 0:
+        return 0.0
+    if taka <= 187.50:
+        return taka / 3.75
+    elif taka <= 316.00:
+        return 50.0 + (taka - 187.50) / 5.14
+    elif taka <= 1031.00:
+        return 75.0 + (taka - 316.00) / 5.72
+    elif taka <= 1632.00:
+        return 200.0 + (taka - 1031.00) / 6.01
+    elif taka <= 2262.00:
+        return 300.0 + (taka - 1632.00) / 6.30
+    else:
+        return 400.0 + (taka - 2262.00) / 10.70
+
 # =====================================
 # DERIVED STATS HELPER
 # =====================================
@@ -159,12 +176,27 @@ def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
     days_elapsed = max(today.day, 1)
     month_days   = 30
     days_left    = max(month_days - days_elapsed, 0)
-    usage        = float(balance_data.get("currentMonthConsumption", 0))
-    bal          = float(balance_data.get("balance", 0))
-    daily_avg    = round(usage / days_elapsed, 2) if days_elapsed else 0
-    projected_mo = round(daily_avg * month_days, 2)
-    est_bill     = estimate_bill(projected_mo)
-    days_bal     = round(bal / (daily_avg * 8), 1) if daily_avg > 0 else "∞"
+
+    val = float(balance_data.get("currentMonthConsumption", 0))
+
+    # Auto-detect Taka vs Units: if val > 500 (e.g. 2097.10), treat val as Taka cost and invert for Units
+    if val > 500:
+        mo_taka  = val
+        mo_units = estimate_units_from_taka(mo_taka)
+    else:
+        mo_units = val
+        mo_taka  = estimate_bill(mo_units)
+
+    bal = float(balance_data.get("balance", 0))
+
+    daily_units_avg = round(mo_units / days_elapsed, 2) if days_elapsed else 0.0
+    daily_taka_avg  = round(mo_taka / days_elapsed, 2) if days_elapsed else 0.0
+
+    projected_units = round(daily_units_avg * month_days, 2)
+    projected_taka  = estimate_bill(projected_units)
+
+    days_bal = round(bal / daily_taka_avg, 1) if daily_taka_avg > 0 else "∞"
+
     conn_age = load_pct = None
     if info_data:
         inst_str = info_data.get("installationDate")
@@ -179,12 +211,17 @@ def calc_stats(balance_data: dict, info_data: dict | None = None) -> dict:
                 pass
         load_kw = info_data.get("sanctionLoad", 0)
         if load_kw:
-            load_pct = round((daily_avg / 24) / load_kw * 100, 1)
+            load_pct = round((daily_units_avg / 24) / load_kw * 100, 1)
+
     return dict(
         days_elapsed=days_elapsed, days_left=days_left,
-        daily_avg=daily_avg, projected_mo=projected_mo,
-        est_bill=est_bill, days_bal_lasts=days_bal,
+        mo_units=mo_units, mo_taka=mo_taka,
+        daily_units_avg=daily_units_avg, daily_taka_avg=daily_taka_avg,
+        projected_units=projected_units, projected_taka=projected_taka,
+        est_bill=projected_taka, days_bal_lasts=days_bal,
         conn_age=conn_age, load_pct=load_pct,
+        # Backward compatibility aliases
+        daily_avg=daily_units_avg, projected_mo=projected_units,
     )
 
 # =====================================
@@ -792,15 +829,22 @@ async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context)
             await send_fn(msg, parse_mode="Markdown", reply_markup=back_keyboard())
             return
         bal_val = float(data.get('balance', 0))
-        mo_use  = float(data.get('currentMonthConsumption', 0))
-        lang    = get_lang(None, context)
-        warn_banner = get_low_balance_warning(bal_val, daily_avg=mo_use/30, lang=lang)
+        raw_val = float(data.get('currentMonthConsumption', 0))
+        if raw_val > 500:
+            mo_taka  = raw_val
+            mo_units = estimate_units_from_taka(mo_taka)
+        else:
+            mo_units = raw_val
+            mo_taka  = estimate_bill(mo_units)
+
+        lang = get_lang(None, context)
+        warn_banner = get_low_balance_warning(bal_val, daily_avg=mo_units/30, lang=lang)
 
         await send_fn(
-            f"⚡ *Balance Info*\n\n"
+            f"⚡ *Prepaid Balance Info*\n\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
-            f"💰 Balance: *৳{bal_val:.2f}*\n"
-            f"📊 This Month: `{mo_use:.2f} Unit`\n"
+            f"💵 *Prepaid Balance:* *৳{bal_val:.2f}*\n"
+            f"⚡ *This Month Usage:* `{mo_units:.2f} kWh` (*৳{mo_taka:.2f}*)\n"
             f"🔌 Meter: `{data.get('meterNo', 'N/A')}`\n"
             f"🕒 Last Reading: `{data.get('readingTime', 'N/A')}`"
             f"{warn_banner}",
@@ -890,15 +934,15 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
         load_line = f"🔌 Sanctioned load: `{info_data.get('sanctionLoad','N/A')} kW` (Peak load: ~{s['load_pct']}%)\n" if s["load_pct"] else ""
         lang = get_lang(update, context) if update else "en"
         
-        mo_use = float(bal_data.get('currentMonthConsumption', 0))
-        slab_warning = get_tariff_slab_warning(mo_use, s['projected_mo'], s['days_elapsed'], s['days_left'], lang=lang)
+        slab_warning = get_tariff_slab_warning(s['mo_units'], s['projected_units'], s['days_elapsed'], s['days_left'], lang=lang)
 
         caption_text = (
             f"📊 *Usage Statistics & Analytics Dashboard*\n\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
-            f"⚡ *Month Usage:* `{mo_use:.2f} Unit` | 📉 Avg: `{s['daily_avg']} Unit/day`\n"
-            f"🔮 *Projected:* `{s['projected_mo']} Unit` | 💳 Est. Bill: *~৳{s['est_bill']}*\n"
-            f"💵 *Balance:* *৳{bal_data.get('balance', 0)}* (lasts ~`{s['days_bal_lasts']} days`)\n"
+            f"⚡ *Month Consumption:* `{s['mo_units']:.2f} kWh` (*৳{s['mo_taka']:.2f}*)\n"
+            f"📉 *Daily Avg:* `{s['daily_units_avg']:.2f} kWh/day` (~৳{s['daily_taka_avg']:.2f}/day)\n"
+            f"🔮 *Projected Month:* `{s['projected_units']:.2f} kWh` (~৳{s['projected_taka']:.2f})\n"
+            f"💵 *Prepaid Balance:* *৳{bal_data.get('balance', 0)}* (lasts ~`{s['days_bal_lasts']} days`)\n"
             f"{load_line}{slab_warning}"
         )
 
@@ -937,19 +981,17 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
         s = calc_stats(bal_data, info_data)
         conn_line = f"🏗 Connection age: `{s['conn_age']}`\n" if s["conn_age"] else ""
         lang = get_lang(None, context)
-        mo_use = float(bal_data.get('currentMonthConsumption', 0))
-        slab_warning = get_tariff_slab_warning(mo_use, s['projected_mo'], s['days_elapsed'], s['days_left'], lang=lang)
+        slab_warning = get_tariff_slab_warning(s['mo_units'], s['projected_units'], s['days_elapsed'], s['days_left'], lang=lang)
         await send_fn(
             f"📋 *Full Account Summary*\n\n"
             f"👤 *{info_data.get('customerName','N/A')}*\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
             f"📍 {info_data.get('installationAddress','N/A')}\n\n"
-            f"💰 *Balance & Usage*\n"
+            f"💰 *Balance & Consumption*\n"
             f"💵 Balance: *৳{bal_data.get('balance',0)}*\n"
-            f"📈 This month: `{mo_use:.2f} Unit`\n"
-            f"📉 Daily avg: `{s['daily_avg']} Unit/day`\n"
-            f"🔮 Projected: `{s['projected_mo']} Unit`\n"
-            f"💳 Est. bill: *~৳{s['est_bill']}*\n"
+            f"⚡ This Month: `{s['mo_units']:.2f} kWh` (*৳{s['mo_taka']:.2f}*)\n"
+            f"📉 Daily Avg: `{s['daily_units_avg']:.2f} kWh/day` (~৳{s['daily_taka_avg']:.2f}/day)\n"
+            f"🔮 Projected Month: `{s['projected_units']:.2f} kWh` (*~৳{s['projected_taka']:.2f}*)\n"
             f"🕐 Balance lasts ~`{s['days_bal_lasts']} days`\n\n"
             f"🔌 *Meter & Connection*\n"
             f"🔌 Meter: `{info_data.get('meterNo','N/A')}` | "

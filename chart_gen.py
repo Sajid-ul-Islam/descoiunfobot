@@ -249,7 +249,10 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
         height=480,
     )
 
-    img_bytes = pio.to_image(fig, format="png", engine="kaleido")
+    try:
+        img_bytes = pio.to_image(fig, format="png", engine="kaleido")
+    except Exception:
+        img_bytes = pio.to_image(fig, format="png")
     return io.BytesIO(img_bytes)
 
 
