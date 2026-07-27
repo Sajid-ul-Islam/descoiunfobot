@@ -56,15 +56,20 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
         soup = BeautifulSoup(r2.text, "html.parser")
         
         # Parse customer info if available
-        name_tag = soup.find(text=re.compile(r"Customer Name|Grahok Name", re.I))
+        name_tag = soup.find(text=re.compile(r"Customer Name|Grahok Name|Name", re.I))
         name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"BPDB Customer ({account_no})"
         
-        bal_tag = soup.find(text=re.compile(r"Balance|Net Amount|Taka", re.I))
         balance = 0.0
+        bal_tag = soup.find(text=re.compile(r"Balance|Net Amount|Available|Taka|TK", re.I))
         if bal_tag and bal_tag.parent:
             nums = re.findall(r"[-+]?\d*\.\d+|\d+", bal_tag.parent.text)
             if nums:
                 balance = float(nums[0])
+
+        if balance == 0.0:
+            json_matches = re.findall(r'"balance"\s*:\s*([\d\.]+)', r2.text)
+            if json_matches:
+                balance = float(json_matches[0])
                 
         data = {
             "accountNo": account_no,
@@ -76,15 +81,14 @@ def fetch_bpdb_portal(account_no: str, meter_no: str = "") -> tuple:
             "provider": "BPDB",
             "system": "billonweb",
             "portalUrl": url,
-            "status": "OK",
+            "status": "OK" if balance > 0 else "PORTAL_GUIDE",
         }
         return data, 200, "OK"
     except Exception as e:
-        # Fallback structured record when portal form undergoes server maintenance
         data = {
             "accountNo": account_no,
             "meterNo": meter_no or f"BPDB-{account_no[-6:]}",
-            "customerName": f"BPDB Account `{account_no}`",
+            "customerName": f"BPDB Customer (`{account_no}`)",
             "balance": 0.0,
             "currentMonthConsumption": 0.0,
             "provider": "BPDB",

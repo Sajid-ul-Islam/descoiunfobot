@@ -199,7 +199,6 @@ def main_keyboard(lang: str = "en"):
         ],
         [
             InlineKeyboardButton(get_msg(lang, "stats_btn"),   callback_data="stats"),
-            InlineKeyboardButton(get_msg(lang, "chart_btn"),   callback_data="chart"),
         ],
         [
             InlineKeyboardButton(get_msg(lang, "summary_btn"), callback_data="summary"),
@@ -1776,8 +1775,7 @@ async def setup_commands(app):
         BotCommand("start",    "🏠 Main menu"),
         BotCommand("balance",  "⚡ Prepaid balance"),
         BotCommand("info",     "👤 Customer & meter info"),
-        BotCommand("stats",    "📊 Usage stats & bill estimate"),
-        BotCommand("chart",    "📈 Visual analytics chart"),
+        BotCommand("stats",    "📊 Usage stats & visual dashboard"),
         BotCommand("summary",  "📋 Full account summary"),
         BotCommand("daily",    "📆 Daily usage & cost breakdown"),
         BotCommand("monthly",  "📅 Monthly consumption history"),
