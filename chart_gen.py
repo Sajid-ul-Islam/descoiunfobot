@@ -9,7 +9,7 @@ pio.templates.default = "plotly_dark"
 FONT_FAMILY = "Noto Sans Bengali, Kalpurush, SolaimanLipi, Vrinda, Arial, sans-serif"
 
 def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: str = "en") -> io.BytesIO | None:
-    """Generates a smooth glowing Area + Line chart for daily consumption & cost."""
+    """Generates a date-wise Bar + Cost spline chart for daily consumption."""
     if not daily_data or len(daily_data) < 1:
         return None
 
@@ -54,19 +54,18 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # 1. Glowing Semi-Transparent Spline Area for Units
+    # 1. Date-wise Bars for Units (kWh)
     fig.add_trace(
-        go.Scatter(
+        go.Bar(
             x=dates,
             y=units,
             name="Units (kWh)" if lang == "en" else "ইউনিট (kWh)",
-            mode="lines+markers",
-            line=dict(color="#89b4fa", width=3, shape="spline"),
-            fill="tozeroy",
-            fillcolor="rgba(137, 180, 250, 0.20)",
-            marker=dict(size=7, color="#89b4fa", symbol="circle"),
+            marker=dict(
+                color="#89b4fa",
+                line=dict(color="#b4befe", width=1),
+            ),
             text=[f"{u:.1f}" for u in units],
-            textposition="top center",
+            textposition="outside",
             textfont=dict(color="#cdd6f4", size=9, family=FONT_FAMILY),
         ),
         secondary_y=False,
@@ -79,7 +78,7 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
             y=taka,
             name="Cost (৳)" if lang == "en" else "খরচ (৳)",
             mode="lines+markers",
-            line=dict(color="#fab387", width=3, shape="spline", dash="solid"),
+            line=dict(color="#fab387", width=3, shape="spline"),
             marker=dict(size=7, color="#fab387", symbol="diamond"),
         ),
         secondary_y=True,
@@ -102,7 +101,14 @@ def generate_daily_chart(daily_data: list, account_no: str, system: str, lang: s
         font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
-        xaxis=dict(title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
+        xaxis=dict(
+            type="category",
+            title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)",
+            gridcolor="#313244",
+            showgrid=True,
+            title_font=dict(family=FONT_FAMILY),
+            tickangle=-45,
+        ),
         yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis2=dict(title="Cost (৳)" if lang == "en" else "খরচ (৳)", showgrid=False, title_font=dict(family=FONT_FAMILY)),
         width=850,
@@ -174,7 +180,7 @@ def generate_monthly_chart(monthly_data: list, account_no: str, system: str, lan
         font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
-        xaxis=dict(title="Month (YYYY-MM)" if lang == "en" else "মাস (YYYY-MM)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
+        xaxis=dict(type="category", title="Month (YYYY-MM)" if lang == "en" else "মাস (YYYY-MM)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis2=dict(title="Bill (৳)" if lang == "en" else "বিল (৳)", showgrid=False, title_font=dict(family=FONT_FAMILY)),
         width=850,
@@ -237,7 +243,7 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
         plot_bgcolor="#181825",
         font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
-        xaxis=dict(title="Recharge Date" if lang == "en" else "রিচার্জের তারিখ", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
+        xaxis=dict(type="category", title="Recharge Date" if lang == "en" else "রিচার্জের তারিখ", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis=dict(title="Amount (৳)" if lang == "en" else "টাকা (৳)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         width=850,
         height=480,
@@ -459,19 +465,18 @@ def generate_custom_date_range_chart(
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # 1. Glowing Spline Area for Units
+    # 1. Date-wise Bars for Units (kWh)
     fig.add_trace(
-        go.Scatter(
+        go.Bar(
             x=dates,
             y=units,
             name="Units (kWh)" if lang == "en" else "ইউনিট (kWh)",
-            mode="lines+markers",
-            line=dict(color="#89b4fa", width=3, shape="spline"),
-            fill="tozeroy",
-            fillcolor="rgba(137, 180, 250, 0.20)",
-            marker=dict(size=7, color="#89b4fa", symbol="circle"),
+            marker=dict(
+                color="#89b4fa",
+                line=dict(color="#b4befe", width=1),
+            ),
             text=[f"{u:.1f}" for u in units],
-            textposition="top center",
+            textposition="outside",
             textfont=dict(color="#cdd6f4", size=9, family=FONT_FAMILY),
         ),
         secondary_y=False,
@@ -507,7 +512,14 @@ def generate_custom_date_range_chart(
         font=dict(color="#a6adc8", family=FONT_FAMILY),
         margin=dict(l=40, r=40, t=60, b=40),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(family=FONT_FAMILY)),
-        xaxis=dict(title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
+        xaxis=dict(
+            type="category",
+            title="Date (MM-DD)" if lang == "en" else "তারিখ (MM-DD)",
+            gridcolor="#313244",
+            showgrid=True,
+            title_font=dict(family=FONT_FAMILY),
+            tickangle=-45,
+        ),
         yaxis=dict(title="Units (kWh)" if lang == "en" else "ইউনিট (kWh)", gridcolor="#313244", showgrid=True, title_font=dict(family=FONT_FAMILY)),
         yaxis2=dict(title="Cost (৳)" if lang == "en" else "খরচ (৳)", showgrid=False, title_font=dict(family=FONT_FAMILY)),
         width=850,
