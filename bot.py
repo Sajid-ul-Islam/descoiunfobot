@@ -952,7 +952,7 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
             f"{load_line}{slab_warning}"
         )
 
-        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7)
+        buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7, stats=s)
 
         if buf and msg_target:
             await msg_target.reply_photo(
