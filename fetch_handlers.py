@@ -191,6 +191,9 @@ async def fetch_and_send_stats(send_fn, account_no, system, meter_no, context, u
             f"💵 *Prepaid Balance:* *৳{bal_data.get('balance', 0)}* (lasts ~`{s['days_bal_lasts']} days`)\n"
             f"{load_line}{slab_warning}"
         )
+        # Telegram photo caption limit is 1024 chars — truncate if needed
+        if len(caption_text) > 1000:
+            caption_text = caption_text[:1000] + "..."
 
         buf = generate_usage_chart(daily_data or [], monthly_data or [], account_no, system, bal_data=bal_data, lang=lang, days=7, stats=s)
 
@@ -254,7 +257,7 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
         conn_line = f"🏗 Connection age: `{s['conn_age']}`\n" if s["conn_age"] else ""
         lang = get_lang(None, context)
         slab_warning = get_tariff_slab_warning(s['mo_units'], s['projected_units'], s['days_elapsed'], s['days_left'], lang=lang)
-        await send_fn(
+        summary_msg = (
             f"📋 *Full Account Summary*\n\n"
             f"👤 *{info_data.get('customerName','N/A')}*\n"
             f"🔑 Account: `{account_no}` _{system}_\n"
@@ -272,7 +275,13 @@ async def fetch_and_send_summary(send_fn, account_no, system, meter_no, context)
             f"🌐 Feeder: `{info_data.get('feederName','N/A')}`\n"
             f"📋 Tariff: `{info_data.get('tariffSolution','N/A')}`\n"
             f"{conn_line}"
-            f"{slab_warning}",
+            f"{slab_warning}"
+        )
+        # Ensure message stays under Telegram's 4096 char limit
+        if len(summary_msg) > 4000:
+            summary_msg = summary_msg[:4000] + "..."
+        await send_fn(
+            summary_msg,
             parse_mode="Markdown",
             reply_markup=main_keyboard(lang),
         )
@@ -313,7 +322,7 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
             pattern_banner += "\n\n"
 
         lines   = []
-        for r in records[:15]:  # max 15 entries
+        for r in records[:10]:  # max 10 entries to stay under Telegram 4096 char limit
             dt  = r.get("rechargeDate") or r.get("date", "N/A")
             amt = r.get("totalAmount") or r.get("rechargeAmount") or r.get("amount", "N/A")
             tok = r.get("tokenNo", "")
@@ -321,12 +330,18 @@ async def fetch_and_send_recharge(send_fn, account_no, system, meter_no, context
             if tok:
                 line += f"\n   🔑 Token: `{tok}`"
             lines.append(line)
-        await send_fn(
+        msg_text = (
             f"💳 *Recharge History & Pattern Analysis*\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
             f"{pattern_banner}"
             f"📜 *Recent Recharges:*\n"
-            + "\n\n".join(lines),
+            + "\n\n".join(lines)
+        )
+        # Ensure message stays under Telegram's 4096 char limit
+        if len(msg_text) > 4000:
+            msg_text = msg_text[:4000] + "..."
+        await send_fn(
+            msg_text,
             parse_mode="Markdown",
             reply_markup=recharge_keyboard(lang),
         )
@@ -439,10 +454,17 @@ async def fetch_and_send_daily(send_fn, account_no, system, meter_no, context):
 
         lines.reverse()
 
-        await send_fn(
+        # Limit to 20 lines to stay under Telegram's 4096 char limit
+        daily_lines = lines[:20]
+        daily_msg = (
             f"📆 *Daily Usage & Cost Breakdown*\n"
             f"🔑 Account: `{account_no}` _{system}_\n\n"
-            + "\n".join(lines[:25]),
+            + "\n".join(daily_lines)
+        )
+        if len(daily_msg) > 4000:
+            daily_msg = daily_msg[:4000] + "..."
+        await send_fn(
+            daily_msg,
             parse_mode="Markdown",
             reply_markup=daily_keyboard(),
         )

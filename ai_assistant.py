@@ -154,30 +154,40 @@ def query_ai_assistant(user_prompt: str, context_data: dict = None, lang: str = 
 
 
 def generate_ai_error_explanation(error_desc: str, action_name: str = "Command", provider: str = "DESCO", lang: str = "en") -> str:
-    """Uses AI provider to generate a user-friendly explanation when a command or request fails."""
+    """Uses AI provider to generate a user-friendly explanation when a command or request fails.
+    
+    Truncates error_desc and AI response to stay under Telegram's 4096 char message limit.
+    """
+    # Truncate error description to keep total message under Telegram's 4096 char limit
+    max_error_len = 200
+    if len(error_desc) > max_error_len:
+        error_desc = error_desc[:max_error_len] + "..."
+
     prompt = (
         f"The user attempted the action '{action_name}' for provider '{provider}', but the system encountered an issue: '{error_desc}'.\n"
         f"Explain clearly in {'Bangla' if lang == 'bn' else 'English'} why this action failed or could not be completed, and provide 2-3 helpful troubleshooting tips or alternative steps for the user.\n"
-        f"Keep the tone polite, concise, and helpful with Markdown formatting."
+        f"Keep the tone polite, concise, and helpful with Markdown formatting. Keep response under 200 words."
     )
     
     ai_explanation = query_gemini(prompt) or query_groq(prompt) or query_openrouter(prompt)
     if ai_explanation:
-        header = "🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট — সেবা স্ট্যাটাস*" if lang == "bn" else "🤖 *AI Smart Assistant — Status Explanation*"
+        # Truncate AI response to prevent exceeding Telegram message limits
+        max_ai_len = 3500
+        if len(ai_explanation) > max_ai_len:
+            ai_explanation = ai_explanation[:max_ai_len] + "..."
+        header = "🤖 *AI Smart Assistant — Status*" if lang == "en" else "🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট — স্ট্যাটাস*"
         return f"{header}\n\n{ai_explanation}"
 
     # Structured fallback if AI keys offline
     if lang == "bn":
         return (
-            f"🤖 *এআই স্মার্ট অ্যাসিস্ট্যান্ট — সেবা বার্তা*\n\n"
-            f"❌ *{action_name} সম্পন্ন করা যায়নি*\n"
+            f"❌ *{action_name} সম্পন্ন হয়নি*\n"
             f"📌 *কারণ:* {error_desc}\n\n"
-            f"💡 *পরামর্শ:* কিছু সময় পর পুনরায় চেষ্টা করুন অথবা সার্ভার স্ট্যাটাস ও অ্যাকাউন্ট নম্বর যাচাই করুন।"
+            f"💡 *পরামর্শ:* কিছু সময় পর পুনরায় চেষ্টা করুন।"
         )
 
     return (
-        f"🤖 *AI Smart Assistant — Status Explanation*\n\n"
         f"❌ *Could not complete {action_name}*\n"
         f"📌 *Reason:* {error_desc}\n\n"
-        f"💡 *Tip:* Please try again in a few moments or verify your account number and provider settings."
+        f"💡 *Tip:* Please try again in a few moments."
     )
