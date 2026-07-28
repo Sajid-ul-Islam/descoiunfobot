@@ -37,7 +37,7 @@ from providers_adapter import is_api_provider, PROVIDERS
 from tariff_tips import get_low_balance_warning, get_tariff_slab_warning
 from report_gen import generate_csv_report, generate_text_statement
 from appliance_calc import get_calc_text, get_tariff_guide_text
-from ai_assistant import generate_ai_error_explanation
+from ai_assistant import generate_ai_error_explanation, query_ai_assistant, extract_ai_intent
 
 from tariff_calc import (
     desco_get,
@@ -61,6 +61,8 @@ from keyboards import (
     bpdb_keyboard,
     providers_keyboard,
     settings_keyboard,
+    confirm_clear_keyboard,
+    ai_quick_keyboard,
     other_keyboard,
     provider_selector_keyboard,
 )
@@ -151,11 +153,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "settings":
         lang = get_lang(update, context)
-        msg_text = get_msg(lang, "settings_title")
+        account_no = context.user_data.get("account_no", "")
+        meter_no   = context.user_data.get("meter_no", "")
+        system     = context.user_data.get("system", "")
+        provider   = context.user_data.get("provider", "DESCO").upper()
+
+        if account_no:
+            sys_str = f" ({system.upper()})" if system else ""
+            meter_str = meter_no or ("N/A" if lang == "en" else "নাই")
+            account_info = (
+                f"🔑 *Saved Account:* `{account_no}`{sys_str}\n🔌 *Meter:* `{meter_str}`"
+                if lang == "en"
+                else f"🔑 *সংরক্ষিত অ্যাকাউন্ট:* `{account_no}`{sys_str}\n🔌 *মিটার:* `{meter_str}`"
+            )
+        else:
+            account_info = (
+                "🔑 *Saved Account:* _None (Enter account number on main menu)_"
+                if lang == "en"
+                else "🔑 *সংরক্ষিত অ্যাকাউন্ট:* _নাই (প্রধান মেনুতে নম্বর দিন)_"
+            )
+
+        msg_text = get_msg(lang, "settings_title", provider=provider, account_info=account_info)
         await send(
             msg_text,
             parse_mode="Markdown",
-            reply_markup=settings_keyboard(lang),
+            reply_markup=settings_keyboard(lang, has_account=bool(account_no)),
+        )
+        return
+
+    if data == "confirm_clear_account":
+        lang = get_lang(update, context)
+        account_no = context.user_data.get("account_no", "")
+        await send(
+            get_msg(lang, "confirm_clear_title", account_no=account_no),
+            parse_mode="Markdown",
+            reply_markup=confirm_clear_keyboard(lang),
+        )
+        return
+
+    if data in ("do_clear_account", "clear_account", "forget"):
+        track_user(update.effective_user, "/forget")
+        lang = get_lang(update, context)
+        context.user_data.pop("account_no", None)
+        context.user_data.pop("meter_no", None)
+        context.user_data.pop("system", None)
+        context.user_data.pop("customer_name", None)
+        await send(
+            get_msg(lang, "account_cleared"),
+            parse_mode="Markdown",
+            reply_markup=main_keyboard(lang),
         )
         return
 
@@ -288,13 +334,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = get_lang(update, context)
         context.user_data["pending_action"] = "ask_ai"
         await send(
-            "🤖 *AI Smart Assistant*\n\n"
-            "Ask me any question in English or Bangla about your electricity bill, meter codes, or tariff rates!\n\n"
-            "_(Example: `এসি বেশি চালালে বিল কমানোর উপায় কি?` or `How do I check balance on Hexing meter?`)_\n\n"
-            "Type your question below (or /cancel to return):",
+            get_msg(lang, "ai_prompt_title"),
             parse_mode="Markdown",
+            reply_markup=ai_quick_keyboard(lang),
         )
         return ASK_ACCOUNT
+
+    if data.startswith("ai_prompt_"):
+        lang = get_lang(update, context)
+        account_no = context.user_data.get("account_no", "")
+        ctx_data   = {"provider": context.user_data.get("provider", "DESCO"), "account_no": account_no}
+
+        prompt_key = data.replace("ai_prompt_", "")
+        prompt_texts = {
+            "peak": "What are DESCO LT-A Peak and Off-Peak tariff hours and rates?" if lang == "en" else "ডেসকো এলটি-এ পিক এবং অফ-পিক আওয়ারের সময়সূচী ও ট্যারিফ রেট কত?",
+            "ac": "How to calculate AC monthly electricity bill and power consumption?" if lang == "en" else "এসি ব্যবহার করলে মাসে কত বিল আসবে কিভাবে হিসাব করব?",
+            "token": "How to recover missing prepaid meter recharge token from bKash app?" if lang == "en" else "বিকাশ অ্যাপে প্রিপেইড মিটার রিচার্জের পর টোকেন না পেলে কি করব?",
+        }
+        user_prompt = prompt_texts.get(prompt_key, "Help me with my electricity bill.")
+
+        status_msg = await query.message.reply_text("🤖 Thinking...")
+        raw_reply = query_ai_assistant(user_prompt, context_data=ctx_data, lang=lang)
+        clean_text, _ = extract_ai_intent(raw_reply)
+
+        await status_msg.edit_text(
+            clean_text,
+            parse_mode="Markdown",
+            reply_markup=ai_quick_keyboard(lang),
+        )
+        return
+
+    if data == "providers_info":
+        lang = get_lang(update, context)
+        await send(
+            get_msg(lang, "providers_hub_title"),
+            parse_mode="Markdown",
+            reply_markup=providers_keyboard(lang),
+        )
+        return
 
     if data == "token_info":
         lang = get_lang(update, context)

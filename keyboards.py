@@ -111,16 +111,50 @@ def bpdb_keyboard(lang: str = "en"):
 
 def providers_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚡ Switch Active Provider", callback_data="select_provider"),
+            InlineKeyboardButton(get_msg(lang, "postpaid_btn"),    callback_data="postpaid_info"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "palli_btn"),  callback_data="palli_info"),
+            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),   callback_data="bpdb_info"),
+        ],
+        [
+            InlineKeyboardButton(get_msg(lang, "nesco_btn"),  callback_data="nesco_info"),
+            InlineKeyboardButton(get_msg(lang, "token_btn"),  callback_data="token_info"),
+        ],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
-def settings_keyboard(lang: str = "en"):
+def settings_keyboard(lang: str = "en", has_account: bool = False):
+    acc_btn = (
+        InlineKeyboardButton(get_msg(lang, "clear_account_btn"), callback_data="confirm_clear_account")
+        if has_account
+        else InlineKeyboardButton(get_msg(lang, "set_account_btn"), callback_data="start")
+    )
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
             InlineKeyboardButton("🇧🇩 বাংলা",  callback_data="set_lang_bn"),
         ],
+        [acc_btn],
         [InlineKeyboardButton("⚡ Change Utility Provider", callback_data="select_provider")],
+        [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
+    ])
+
+def confirm_clear_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(get_msg(lang, "confirm_clear_yes"), callback_data="do_clear_account"),
+            InlineKeyboardButton(get_msg(lang, "confirm_clear_cancel"), callback_data="settings"),
+        ]
+    ])
+
+def ai_quick_keyboard(lang: str = "en"):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(get_msg(lang, "ai_chip_peak"),  callback_data="ai_prompt_peak")],
+        [InlineKeyboardButton(get_msg(lang, "ai_chip_ac"),    callback_data="ai_prompt_ac")],
+        [InlineKeyboardButton(get_msg(lang, "ai_chip_token"), callback_data="ai_prompt_token")],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
 
@@ -132,18 +166,10 @@ def other_keyboard(lang: str = "en"):
         ],
         [
             InlineKeyboardButton(get_msg(lang, "tariff_btn"), callback_data="tariff_info"),
-            InlineKeyboardButton(get_msg(lang, "palli_btn"),  callback_data="palli_info"),
+            InlineKeyboardButton(get_msg(lang, "token_btn"),  callback_data="token_info"),
         ],
         [
-            InlineKeyboardButton(get_msg(lang, "bpdb_btn"),      callback_data="bpdb_info"),
-            InlineKeyboardButton(get_msg(lang, "nesco_btn"),     callback_data="nesco_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "postpaid_btn"),  callback_data="postpaid_info"),
-            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="providers_info"),
-        ],
-        [
-            InlineKeyboardButton(get_msg(lang, "token_btn"),     callback_data="token_info"),
+            InlineKeyboardButton(get_msg(lang, "providers_btn"), callback_data="select_provider"),
         ],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])

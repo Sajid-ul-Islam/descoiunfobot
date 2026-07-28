@@ -25,7 +25,7 @@ Telegram Bot Commands Available to Call/Recommend:
 • /nesco — NESCO hotline (16603) and portal guide
 • /token — Missing token recovery guide for bKash, Nagad, Rocket
 • /providers — Complete 6-provider Bangladesh power grid directory
-• /settings — Language (English/Bangla) and provider settings
+• /settings — Language (English/Bangla), clear saved account, and provider settings
 • /forget — Clear saved account
 
 Instructions for Natural Language Processing (NLP & RAG):

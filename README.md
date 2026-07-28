@@ -89,7 +89,7 @@ A state-of-the-art, feature-rich Telegram Bot for tracking prepaid & postpaid el
 | `/nesco` | ❄️ NESCO | North Zone portal guide & hotline 16603 |
 | `/token` | 🔑 Token Help | bKash missing token recovery guide |
 | `/providers`| 🇧🇩 All BD Providers | Complete 6-entity Bangladesh power grid directory |
-| `/settings` | ⚙️ Settings | Language (EN/BN) and provider preferences |
+| `/settings` | ⚙️ Settings | Language (EN/BN), clear saved account, and provider preferences |
 | `/forget` | 🗑 Clear Saved Account | Clears saved account details from user memory |
 | `/help` | ❓ Help | Instructions and user guide |
 

@@ -23,6 +23,8 @@ from keyboards import (
     bpdb_keyboard,
     providers_keyboard,
     settings_keyboard,
+    confirm_clear_keyboard,
+    ai_quick_keyboard,
     other_keyboard,
     provider_selector_keyboard,
 )
@@ -105,11 +107,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update.effective_user, "/settings")
     lang = get_lang(update, context)
-    msg_text = get_msg(lang, "settings_title")
+    account_no = context.user_data.get("account_no", "")
+    meter_no   = context.user_data.get("meter_no", "")
+    system     = context.user_data.get("system", "")
+    provider   = context.user_data.get("provider", "DESCO").upper()
+
+    if account_no:
+        sys_str = f" ({system.upper()})" if system else ""
+        meter_str = meter_no or ("N/A" if lang == "en" else "নাই")
+        account_info = (
+            f"🔑 *Saved Account:* `{account_no}`{sys_str}\n🔌 *Meter:* `{meter_str}`"
+            if lang == "en"
+            else f"🔑 *সংরক্ষিত অ্যাকাউন্ট:* `{account_no}`{sys_str}\n🔌 *মিটার:* `{meter_str}`"
+        )
+    else:
+        account_info = (
+            "🔑 *Saved Account:* _None (Enter account number on main menu)_"
+            if lang == "en"
+            else "🔑 *সংরক্ষিত অ্যাকাউন্ট:* _নাই (প্রধান মেনুতে নম্বর দিন)_"
+        )
+
+    msg_text = get_msg(lang, "settings_title", provider=provider, account_info=account_info)
     await update.message.reply_text(
         msg_text,
         parse_mode="Markdown",
-        reply_markup=settings_keyboard(lang),
+        reply_markup=settings_keyboard(lang, has_account=bool(account_no)),
     )
 
 
@@ -137,10 +159,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    track_user(update.effective_user, "/forget")
+    lang = get_lang(update, context)
+    context.user_data.pop("account_no", None)
+    context.user_data.pop("meter_no", None)
+    context.user_data.pop("system", None)
+    context.user_data.pop("customer_name", None)
     await update.message.reply_text(
-        "🗑 Saved account cleared.",
-        reply_markup=main_keyboard(),
+        get_msg(lang, "account_cleared"),
+        parse_mode="Markdown",
+        reply_markup=main_keyboard(lang),
     )
 
 
@@ -214,11 +242,9 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(update, context)
     context.user_data["pending_action"] = "ask_ai"
     await update.message.reply_text(
-        "🤖 *AI Smart Assistant*\n\n"
-        "Ask me any question in English or Bangla about your electricity bill, meter codes, or tariff rates!\n\n"
-        "_(Example: `এসি বেশি চালালে বিল কমানোর উপায় কি?` or `How do I check balance on Hexing meter?`)_\n\n"
-        "Type your question below (or /cancel to return):",
+        get_msg(lang, "ai_prompt_title"),
         parse_mode="Markdown",
+        reply_markup=ai_quick_keyboard(lang),
     )
     return ASK_ACCOUNT
 
@@ -248,23 +274,10 @@ async def nesco_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def providers_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_user(update.effective_user, "/providers")
     lang = get_lang(update, context)
-    msg_text = (
-        "⚡ *Select Electricity Provider / বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান*\n\n"
-        "Choose your electricity distribution company from the 6 providers below to check balance, usage, and monthly bills:\n\n"
-        "1️⃣ *DESCO* — Dhaka North, Uttara, Gulshan, Mirpur, Tongi\n"
-        "2️⃣ *BPDB* — Chattogram, Sylhet, Mymensingh, Comilla\n"
-        "3️⃣ *DPDC* — Dhaka South, Dhanmondi, Narayanganj\n"
-        "4️⃣ *Palli Bidyut (BREB)* — Rural Subdivisions & Unions\n"
-        "5️⃣ *WZPDCL* — Khulna, Barishal, Faridpur\n"
-        "6️⃣ *NESCO* — Rajshahi, Rangpur, Bogura"
-        if lang == "en"
-        else "⚡ *বিদ্যুৎ সরবরাহকারী প্রতিষ্ঠান নির্বাচন করুন*\n\nব্যালেন্স, ব্যবহার এবং বিল দেখার জন্য নিচে দেওয়া ৬টি বিদ্যুৎ বিতরণ কোম্পানির মধ্যে থেকে আপনার প্রতিষ্ঠান নির্বাচন করুন:"
-    )
     await update.message.reply_text(
-        msg_text,
+        get_msg(lang, "providers_hub_title"),
         parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=provider_selector_keyboard(lang),
+        reply_markup=providers_keyboard(lang),
     )
 
 
