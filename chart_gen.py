@@ -233,13 +233,19 @@ def generate_recharge_chart(recharge_data: list, account_no: str, system: str, l
 
     if pattern and pattern.get("avg_amount", 0) > 0:
         avg_amt = pattern["avg_amount"]
-        fig.add_hline(
-            y=avg_amt,
-            line_dash="dash",
-            line_color="#f9e2af",
-            line_width=1.5,
-            annotation_text=f"avg ৳{avg_amt:,.0f}",
-            annotation_font=dict(color="#f9e2af", size=9, family=FONT_FAMILY),
+        fig.add_shape(
+            type="line",
+            x0=0, x1=1, xref="x domain",
+            y0=avg_amt, y1=avg_amt, yref="y",
+            line=dict(color="#f9e2af", width=1.5, dash="dash"),
+        )
+        fig.add_annotation(
+            x=1, xref="x domain",
+            y=avg_amt, yref="y",
+            text=f"avg ৳{avg_amt:,.0f}",
+            showarrow=False,
+            font=dict(color="#f9e2af", size=9, family=FONT_FAMILY),
+            xanchor="right", yanchor="bottom"
         )
 
     EN = (lang == "en")
@@ -455,7 +461,12 @@ def generate_usage_chart(
     bar_colors = ["#a6e3a1" if v <= daily_units_avg else "#f38ba8" for v in timeline_kwh]
     fig.add_trace(go.Bar(x=timeline_dates, y=timeline_kwh, name="kWh/day", marker=dict(color=bar_colors), text=[f"{v:.1f}" if v > 0 else "" for v in timeline_kwh], textposition="outside", textfont=dict(size=7)), row=3, col=1, secondary_y=False)
     fig.add_trace(go.Scatter(x=timeline_dates, y=timeline_taka, name="৳ Cost/day", mode="lines+markers", line=dict(color="#fab387", width=2, shape="spline", dash="dot"), marker=dict(size=4)), row=3, col=1, secondary_y=True)
-    fig.add_hline(y=daily_units_avg, line_dash="dash", line_color="#6c7086", line_width=1.5, row=3, col=1)
+    fig.add_shape(
+        type="line",
+        x0=0, x1=1, xref="x3 domain",
+        y0=daily_units_avg, y1=daily_units_avg, yref="y3",
+        line=dict(color="#6c7086", width=1.5, dash="dash"),
+    )
 
     fig.add_trace(go.Bar(x=week_labels, y=last_week_kwh, name="Last Week", marker=dict(color="#585b70")), row=4, col=1)
     fig.add_trace(go.Bar(x=week_labels, y=this_week_kwh, name="This Week", marker=dict(color="#89b4fa")), row=4, col=1)
