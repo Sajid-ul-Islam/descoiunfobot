@@ -1,5 +1,7 @@
 # ⚡ Bangladesh Unified Power Utility & Smart AI Telegram Bot
 
+### 🤖 Live Bot: [@descoTGbot](https://t.me/descoTGbot)
+
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Telegram Bot API](https://img.shields.io/badge/Telegram%20Bot%20API-v20+-0088cc.svg)](https://core.telegram.org/bots/api)
 [![AI Smart Assistant](https://img.shields.io/badge/AI%20Assistant-Gemini%20%7C%20Groq%20%7C%20OpenRouter-orange.svg)](https://ai.google.dev/)
