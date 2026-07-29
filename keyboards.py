@@ -89,12 +89,17 @@ def recharge_keyboard(lang: str = "en"):
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"),       callback_data="start")],
     ])
 
-def postpaid_keyboard(lang: str = "en"):
-    return InlineKeyboardMarkup([
+def postpaid_keyboard(lang: str = "en", pdf_url: str | None = None):
+    buttons = []
+    if pdf_url:
+        buttons.append([InlineKeyboardButton("📥 Download Bill Copy (PDF)", url=pdf_url)])
+    buttons.extend([
         [InlineKeyboardButton("📄 DESCO E-Bill Portal", url="https://ebill.desco.org.bd/")],
         [InlineKeyboardButton("🌐 DESCO OCSMS Portal", url="https://ocsms.desco.org.bd/")],
         [InlineKeyboardButton(get_msg(lang, "main_menu_btn"), callback_data="start")],
     ])
+    return InlineKeyboardMarkup(buttons)
+
 
 def palli_keyboard(lang: str = "en"):
     return InlineKeyboardMarkup([

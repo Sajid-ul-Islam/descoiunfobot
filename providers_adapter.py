@@ -13,8 +13,9 @@ PROVIDERS = {
     "desco": {
         "name": "DESCO (Dhaka North)",
         "type": "api",
-        "systems": ["unified", "tkdes"],
+        "systems": ["unified", "tkdes", "desco_postpaid", "postpaid"],
         "base_url": os.getenv("DESCO_API_URL", "https://prepaid.desco.org.bd/api"),
+        "portal_url": "https://ebill.desco.org.bd/",
     },
     "bpdb": {
         "name": "BPDB (Chattogram & Zones)",
@@ -182,7 +183,10 @@ def provider_get(provider_id: str, system: str, endpoint: str, account_no: str =
     Standardized provider API call. Returns (data, code, desc).
     Dispatches to provider-specific adapters while guaranteeing standard dictionary structures.
     """
-    if provider_id == "desco":
+    if provider_id == "desco" and system in ("desco_postpaid", "postpaid"):
+        return scrape_portal_data("desco_postpaid", account_no, meter_no)
+    elif provider_id == "desco":
         return _desco_get(system, endpoint, account_no, meter_no, **extra_params)
     else:
         return _generic_provider_get(provider_id, system, endpoint, account_no, meter_no, **extra_params)
+

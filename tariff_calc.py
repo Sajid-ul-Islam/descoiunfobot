@@ -63,7 +63,18 @@ def detect_system(user_input: str, provider: str = "desco") -> tuple:
     if found_empty_sys:
         return found_empty_sys, user_input, "", None, "EMPTY_PREPAID"
 
+    # Check DESCO Postpaid fallback if user_input looks like a DESCO Postpaid account (e.g. 8 digits)
+    if len(user_input) == 8:
+        try:
+            post_data, post_code, _ = desco_get("desco_postpaid", "getCustomerInfo", user_input, provider="desco")
+            if post_data and post_code == 200:
+                acc_no = post_data.get("accountNo") or user_input
+                return "desco_postpaid", acc_no, "", post_data, "OK"
+        except Exception:
+            pass
+
     return None, None, None, None, "NOT_FOUND"
+
 
 
 # =====================================

@@ -52,12 +52,47 @@ def get_non_desco_reply(prov: str, lang: str, account_no: str = ""):
         return get_all_coverage_text(lang) + acc_str, main_keyboard(lang)
 
 
+async def fetch_and_send_postpaid_bill(send_fn, account_no, context, data=None):
+    lang = get_lang(None, context)
+    if not data:
+        data, code, desc = desco_get("desco_postpaid", "getCustomerInfo", account_no, provider="desco")
+    
+    if not data:
+        await send_fn("⚠️ *Unable to retrieve DESCO Postpaid bill data.*", parse_mode="Markdown", reply_markup=postpaid_keyboard(lang))
+        return
+
+    name = data.get("customerName", "DESCO Customer")
+    bill_amt = data.get("billAmount", data.get("balance", 0.0))
+    bill_month = data.get("billMonth", "Current Month")
+    due_date = data.get("dueDate", "N/A")
+    pdf_url = data.get("pdfUrl")
+
+    await send_fn(
+        f"📄 *DESCO Postpaid Monthly Bill*\n\n"
+        f"🔑 Account No: `{account_no}` _(DESCO Postpaid)_\n"
+        f"👤 Customer Name: *{name}*\n"
+        f"📅 Bill Month: `{bill_month}`\n"
+        f"💵 *Total Bill Amount:* *৳{bill_amt:.2f}*\n"
+        f"⏰ *Due Date:* `{due_date}`\n\n"
+        f"💳 *Payment Options:*\n"
+        f"• *bKash:* Pay Bill → Electricity (Postpaid) → DESCO → Enter `{account_no}`\n"
+        f"• *Nagad / Rocket:* Bill Pay → DESCO Postpaid",
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=postpaid_keyboard(lang, pdf_url=pdf_url),
+    )
+
+
 async def fetch_and_send_balance(send_fn, account_no, system, meter_no, context):
     prov = context.user_data.get("provider", "desco")
     if not is_api_provider(prov):
         lang = get_lang(None, context)
         msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
+        return
+
+    if system in ("desco_postpaid", "postpaid"):
+        await fetch_and_send_postpaid_bill(send_fn, account_no, context)
         return
 
     await send_fn("⏳ Fetching balance...")
@@ -103,6 +138,10 @@ async def fetch_and_send_info(send_fn, account_no, system, meter_no, context):
         lang = get_lang(None, context)
         msg_text, markup = get_non_desco_reply(prov, lang, account_no=account_no)
         await send_fn(msg_text, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=markup)
+        return
+
+    if system in ("desco_postpaid", "postpaid"):
+        await fetch_and_send_postpaid_bill(send_fn, account_no, context)
         return
 
     await send_fn("⏳ Fetching customer info...")

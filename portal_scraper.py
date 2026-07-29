@@ -17,6 +17,7 @@ SESSION.headers.update({
 })
 
 PORTAL_URLS = {
+    "desco_postpaid": "https://ebill.desco.org.bd/",
     "bpdb": "https://billonweb.bpdb.gov.bd/",
     "dpdc": "https://dpdc.org.bd/",
     "nesco": "https://nesco.gov.bd/",
@@ -264,10 +265,83 @@ def fetch_breb_portal(account_no: str, meter_no: str = "") -> tuple:
         return data, 200, "OK"
 
 
+def fetch_desco_postpaid_portal(account_no: str, meter_no: str = "") -> tuple:
+    """Fetches account and bill data from DESCO e-Bill portal (ebill.desco.org.bd)."""
+    url = PORTAL_URLS["desco_postpaid"]
+    try:
+        r = SESSION.get(url, timeout=8, verify=False)
+        captcha_val = _solve_math_captcha(r.text)
+        
+        post_data = {
+            "account_no": account_no,
+            "accountNo": account_no,
+            "captcha": captcha_val,
+        }
+        r2 = SESSION.post(f"{url}search", data=post_data, timeout=8, verify=False)
+        soup = BeautifulSoup(r2.text, "html.parser")
+        
+        name_tag = soup.find(text=re.compile(r"Customer Name|Grahok Name|Name", re.I))
+        name = name_tag.parent.text.split(":")[-1].strip() if name_tag and name_tag.parent else f"DESCO Postpaid Customer ({account_no})"
+        
+        balance = 0.0
+        bal_tag = soup.find(text=re.compile(r"Total Bill|Payable|Net Amount|Taka|TK", re.I))
+        if bal_tag and bal_tag.parent:
+            nums = re.findall(r"[-+]?\d*\.\d+|\d+", bal_tag.parent.text)
+            if nums:
+                balance = float(nums[0])
+                
+        due_tag = soup.find(text=re.compile(r"Due Date|Last Date", re.I))
+        due_date = due_tag.parent.text.split(":")[-1].strip() if due_tag and due_tag.parent else "N/A"
+
+        month_tag = soup.find(text=re.compile(r"Bill Month|Month", re.I))
+        bill_month = month_tag.parent.text.split(":")[-1].strip() if month_tag and month_tag.parent else "Current Month"
+        
+        pdf_tag = soup.find("a", href=re.compile(r".*\.pdf", re.I))
+        pdf_url = f"{url.rstrip('/')}/{pdf_tag['href'].lstrip('/')}" if pdf_tag and pdf_tag.get("href") else None
+
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"DESCO-POST-{account_no[-6:]}",
+            "customerName": name,
+            "balance": balance,
+            "billAmount": balance,
+            "billMonth": bill_month,
+            "dueDate": due_date,
+            "pdfUrl": pdf_url,
+            "currentMonthConsumption": 0.0,
+            "provider": "DESCO",
+            "system": "desco_postpaid",
+            "isPostpaid": True,
+            "portalUrl": url,
+            "status": "OK" if balance > 0 else "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+    except Exception:
+        data = {
+            "accountNo": account_no,
+            "meterNo": meter_no or f"DESCO-POST-{account_no[-6:]}",
+            "customerName": f"DESCO Postpaid Customer (`{account_no}`)",
+            "balance": 0.0,
+            "billAmount": 0.0,
+            "billMonth": "Monthly Bill",
+            "dueDate": "N/A",
+            "pdfUrl": None,
+            "currentMonthConsumption": 0.0,
+            "provider": "DESCO",
+            "system": "desco_postpaid",
+            "isPostpaid": True,
+            "portalUrl": url,
+            "status": "PORTAL_GUIDE",
+        }
+        return data, 200, "OK"
+
+
 def scrape_portal_data(provider_id: str, account_no: str, meter_no: str = "") -> tuple:
     """Main entry point for portal scraping across all providers."""
     p_id = (provider_id or "").lower()
-    if p_id == "bpdb":
+    if p_id in ("desco_postpaid", "desco_portal"):
+        return fetch_desco_postpaid_portal(account_no, meter_no)
+    elif p_id == "bpdb":
         return fetch_bpdb_portal(account_no, meter_no)
     elif p_id == "dpdc":
         return fetch_dpdc_portal(account_no, meter_no)
@@ -279,3 +353,4 @@ def scrape_portal_data(provider_id: str, account_no: str, meter_no: str = "") ->
         return fetch_breb_portal(account_no, meter_no)
     
     return None, 400, f"Unsupported portal provider: {provider_id}"
+
